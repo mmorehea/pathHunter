@@ -86,8 +86,10 @@ def testOverlap(setofpixels1, setofpixels2):
 def orderByPercentOverlap(blobs, reference):
 	overlapList = []
 	for blob in blobs:
-		overlapList.append((testOverlap(set(reference),set(blob)), blob))
-
+		try:
+			overlapList.append((testOverlap(set(reference),set(blob)), blob))
+		except:
+			code.interact(local=locals())
 
 	overlapList = sorted(overlapList,key=lambda o: o[0])[::-1]
 	orderedBlobs = [l[1] for l in overlapList]
@@ -159,85 +161,6 @@ def findNearest(img, startPoint):
 
 	return checkPoint
 
-
-def blobMerge(blob1, blob2, imshape):
-	# from http://stackoverflow.com/questions/14730340/find-the-average-vector-shape
-	if len(blob2) > len(blob1):
-		blob1, blob2 = blob2, blob1
-
-	blob1 = upperLeftJustify(blob1)
-	blob2 = upperLeftJustify(blob2)
-
-	startImg = np.zeros(imshape, np.uint16)
-	startImg[zip(*blob2)] = 99999
-
-	mergedBlob = []
-	for point in blob1:
-		near = findNearest(startImg, point)
-		size = ((len(blob1)**0.5) + (len(blob2)**0.5))/2
-
-		if point[0] == near[0]:
-			verticalDistance = point[1] - near[1]
-			if verticalDistance > 0:
-				newpoint = (near[0], near[1] + 0.5 * size)
-			elif verticalDistance < 0:
-				newpoint = (near[0], near[1] - 0.5 * size)
-			else:
-				newpoint = (near[0],near[1])
-
-		elif point[1] == near[1]:
-			horizontalDistance = point[0] - near[0]
-			if horizontalDistance > 0:
-				newpoint = (near[0] + 0.5 * size, near[1])
-			elif horizontalDistance < 0:
-				newpoint = (near[0] - 0.5 * size, near[1])
-			else:
-				newpoint = (near[0],near[1])
-
-		else:
-			slope = float(point[1] - near[1]) / (point[0] - near[0])
-			dist = 0.5 * size
-			x = (dist**2/(1+slope**2))**0.5
-			y = slope * x
-			if point[0] < near[0]:
-				x = 0-x
-			if point[1] < near[1]:
-				y=0-y
-			newpoint = (int(near[0] + x), int(near[1] + y))
-
-		mergedBlob.append(newpoint)
-		if point == (0,0):
-			code.interact(local=locals())
-
-	return mergedBlob
-
-def upperLeftJustify(blob):
-	box, dimensions = findBBDimensions(blob)
-	transformedBlob = []
-	for point in blob:
-		transformedPoint = (point[0] - box[0], point[1] - box[2])
-		transformedBlob.append(transformedPoint)
-
-	return transformedBlob
-
-def upperRightJustify(blob, shape):
-	box, dimensions = findBBDimensions(blob)
-	transformedBlob = []
-	for point in blob:
-		transformedPoint = (point[0] - box[0], point[1] + shape[1] - dimensions[1] - 10)
-		transformedBlob.append(transformedPoint)
-
-	return transformedBlob
-
-def topJustify(blob, shape):
-	box, dimensions = findBBDimensions(blob)
-	transformedBlob = []
-	for point in blob:
-		transformedPoint = (point[0] - box[0],point[1] + 0.5 * shape[1] - 0.5 * dimensions[1])
-		transformedBlob.append(transformedPoint)
-
-	return transformedBlob
-
 def distance(point1, point2):
 	return ((point2[0] - point1[0])**2 + (point2[1] - point1[1])**2)**0.5
 
@@ -262,7 +185,7 @@ def display(blob):
 ################################################################################
 # SETTINGS
 minimum_process_length = 0
-write_images_to = 'result/'
+write_images_to = 'littleresult/'
 write_pickles_to = 'pickles/object'
 trace_objects = True
 build_resultStack = True
@@ -271,44 +194,44 @@ indices_of_slices_to_be_removed = []
 ################################################################################
 def main():
 	dirr = sys.argv[1]
-
+	#collecting Tiffs
 	list_of_image_paths = sorted(glob.glob(dirr +'*'))
-
 	list_of_image_paths = [i for j, i, in enumerate(list_of_image_paths) if j not in indices_of_slices_to_be_removed]
-
 	shape = cv2.imread(list_of_image_paths[0],-1).shape
 
 	start = timer()
 
 	if trace_objects:
-
+		# general setup
 		chainLengths = []
-
 		images = []
+		objectCount = -1
+
+		#load all images and stack
 		for i, path in enumerate(list_of_image_paths):
 			im = cv2.imread(path, -1)
 			images.append(im)
 		print 'Loaded ' + str(len(images)) + ' images.'
-
 		imageArray = np.dstack(images)
 
+		# finds all unique colors inside of 3D volume
 		colorList = []
 		for z in xrange(imageArray.shape[2]):
 			colorList.extend([c for c in np.unique(imageArray[:,:,z]) if c!=0])
 		colorList = list(set(colorList))
 
-		objectCount = -1
+		# begin searching through slices
 		for z in xrange(imageArray.shape[2]):
 			###Testing###
 			if z != 0:
 				continue
 			#############
+			# get only that slice and find unique blobs
 			image = imageArray[:,:,z]
-
 			colorVals = [c for c in np.unique(image) if c!=0]
 			###Testing###
-			colorVals = []
-			colorVals.append(5724)
+			# colorVals = []
+			# colorVals.append(5724)
 			# colorVals.append(4766)
 			# colorVals.append(5731)
 			# colorVals.append(4917)
@@ -317,32 +240,24 @@ def main():
 			# 6228, 5724, 7287, 9632, 2547
 			# 5724 @ 880: 6758, @817: 5749
 			#############
-
 			blobs = []
 			for color in colorVals:
 				wblob = np.where(image==color)
 				blob = zip(wblob[0], wblob[1])
 				blobs.append(blob)
-
 			blobs = sorted(blobs, key=len)
 
-
+			# with all blobs, begin searching one by one for objects
 			for i, startBlob in enumerate(blobs):
 				# print str(i+1) + '/' + str(len(blobs))
-
 				box, dimensions = findBBDimensions(startBlob)
-
 				color1 = image[startBlob[0]]
 				ogcolor = color1
-
 				centroid1 = findCentroid(startBlob)
-
 				startZ = z
-
 				process = [startBlob]
-
+				# blacks out first blob
 				image[zip(*startBlob)] = 0
-
 				zspace = 0
 				d = 0
 				terminate = False
@@ -352,10 +267,8 @@ def main():
 				currentBlob = startBlob
 
 				while terminate == False:
-
 					zspace += 1
 					blobsfound = []
-
 					try:
 						image2 = imageArray[:,:,z+zspace]
 					except:
@@ -364,10 +277,10 @@ def main():
 						continue
 
 					window = image2[box[0]:box[1], box[2]:box[3]]
-
 					organicWindow = image2[zip(*currentBlob)]
 					frequency = collections.Counter(organicWindow).most_common()
 
+					#check for blackness
 					if frequency[0][0] == 0 and len(frequency) == 1:
 						if d > 10:
 							terminate = True
@@ -380,12 +293,14 @@ def main():
 							d += 1
 							continue
 
+					# find largest color that is not black
 					for each in frequency:
 						if each[0] == 0:
 							continue
 						clr, freq = each
 						break
 
+					# get those pixels that are that color
 					q = np.where(image2 == clr)
 					blob2 = zip(q[0],q[1])
 
@@ -410,11 +325,10 @@ def main():
 					# 		subBlobs, overlapVals = orderByPercentOverlap(subBlobs, currentBlob)
 					# 		blob2 = subBlobs[0]
 
+					# figure out features that describe realtionship between shapes
 					centroid2 = findCentroid(blob2)
-
 					overlap = testOverlap(set(currentBlob), set(blob2))
 					coverage = freq / float(len(organicWindow))
-
 					freq2 = len(set(currentBlob) & set(blob2))
 					coverage2 = freq2 / float(len(blob2))
 
@@ -423,6 +337,7 @@ def main():
 					displacementBuffer.append((dx,dy))
 					if len(displacementBuffer) > 5:
 						del displacementBuffer[0]
+					#collect average displacement buffer
 					dxs = [x[0] for x in displacementBuffer]
 					dys = [x[1] for x in displacementBuffer]
 					avgDisplacement_last5 = (float(sum(dxs))/5, float(sum(dys))/5)
@@ -454,13 +369,14 @@ def main():
 					# 	print 'blobsfound empty'
 					# 	continue
 
+					#thresholds for deciding to add this blob
 					if coverage > 0.75:
 						if overlap > 0.75:
 							blobsfound.append(blob2)
 						elif overlap > 0.5 and d > 3:
 							blobsfound.append(blob2)
 						elif overlap > 0.1:
-							subBlobs = waterShed(blob2, shape)
+							subBlobs, splitPoint = waterShed(blob2, shape)
 							subBlobs, overlapVals = orderByPercentOverlap(subBlobs, currentBlob)
 							for i, sb in enumerate(subBlobs):
 								if overlapVals[i] > 0.1:
@@ -470,6 +386,7 @@ def main():
 									blobsfound.append(subBlobs[0])
 								except:
 									blobsfound.append(blob2)
+
 						else:
 							process.append([])
 							continue
@@ -477,6 +394,7 @@ def main():
 						blobsfound.append(blob2)
 
 					# code.interact(local=locals())
+					# print some stats
 					print str(zspace) + '. ' + str(overlap) + ' ' + str(coverage) + ' ' + str(coverage2)
 
 					if terminate == False:
@@ -485,52 +403,23 @@ def main():
 						for b in blobsfound:
 							newBlob += b
 
-						# if zspace == 1:
-						# 	averageBlob = blobMerge(currentBlob, newBlob, shape)
-						# else:
-						# 	zz = averageBlob
-						# 	averageBlob = blobMerge(averageBlob, newBlob, shape)
-						# 	averageBlob += topJustify(zz, shape)
-						# 	averageBlob += upperRightJustify(newBlob, shape)
-
-
 						#Probably need to do the stuff below when I terminate as well
 						color1 = image2[newBlob[0]]
-
 						image2[zip(*newBlob)] = 0
-
 						process.append(newBlob)
-
 						box,dimensions = findBBDimensions(newBlob)
-
 						d = 0
-
 						centroid1 = findCentroid(newBlob)
-
 						currentBlob = newBlob
 
-
-
 				if len(process) > minimum_process_length:
-					# fig = plt.figure()
-					# ax = fig.gca(projection='3d')
-					# xs = np.array(xs)
-					# ys = np.array(ys)
-					# zs = np.array(range(imageArray.shape[2]-1)[::-1])
-					#
-					#
-					# ax.plot(xs,ys,zs)
-
 					objectCount += 1
-
 					color = colorList[objectCount]
-
 					print '\n'
 					print objectCount
 					end = timer()
 					print(end - start)
 					print '\n'
-
 					chainLengths.append((objectCount, color, len(process)))
 					pickle.dump((startZ, process, color), open(write_pickles_to + str(objectCount) + '.p', 'wb'))
 
