@@ -230,6 +230,7 @@ def trackProcess(startBlob, imageArray, z):
 
 	zspace = 0
 	d = 0
+	skip = 0
 	splitCount = 0
 	terminate = False
 	splitRecent = False
@@ -263,24 +264,46 @@ def trackProcess(startBlob, imageArray, z):
 				continue
 
 		# find largest color that is not black
-		blob2 = []
 		for each in frequency:
 			if each[0] == 0:
 				continue
 			clr, freq = each
-			if freq > 10:
-				q = np.where(image2 == clr)
-				blob2.extend(zip(q[0],q[1]))
+			break
 
 		# get those pixels that are that color
 
-
 		# figure out features that describe realtionship between shapes
+		q = np.where(image2 == clr)
+		blob2 = zip(q[0],q[1])
+
 		centroid2 = findCentroid(blob2)
 		overlap = testOverlap(set(currentBlob), set(blob2))
 		coverage = freq / float(len(organicWindow))
 		freq2 = len(set(currentBlob) & set(blob2))
 		coverage2 = freq2 / float(len(blob2))
+		# shapeDiff = shapeMatch(currentBlob, blob2, shape)
+
+		# if zspace == 188:
+		# 	code.interact(local=locals())
+
+		# print shapeDiff
+		# img = np.zeros(shape,np.uint16)
+		# img[zip(*blob2)] = 99999
+		# cv2.imshow('a',img)
+		# cv2.waitKey()
+		# code.interact(local=locals())
+		if skip < 4:
+			if coverage2 < 0.5:
+				process.append([])
+				skip += 1
+				continue
+		else:
+			terminate = True
+			skip = 0
+			continue
+
+		blobsfound.append(blob2)
+		skip = 0
 
 		# dx = centroid2[0] - centroid1[0]
 		# dy = centroid2[1] - centroid1[1]
@@ -372,7 +395,6 @@ def trackProcess(startBlob, imageArray, z):
 
 		# code.interact(local=locals())
 
-		blobsfound.append(blob2)
 
 		if terminate == False:
 
@@ -380,9 +402,9 @@ def trackProcess(startBlob, imageArray, z):
 			for b in blobsfound:
 				newBlob += b
 
-			shapeDiff = shapeMatch(currentBlob, newBlob, shape)
+			# shapeDiff = shapeMatch(currentBlob, newBlob, shape)
 
-			print str(zspace) + '. ' + str(overlap) + ' ' + str(coverage) + ' ' + str(coverage2) + ' ' + str(shapeDiff)
+			# print str(zspace) + '. ' + str(overlap) + ' ' + str(coverage) + ' ' + str(coverage2) + ' ' + str(shapeDiff)
 
 			#Probably need to do the stuff below when I terminate as well
 			color1 = image2[newBlob[0]]
@@ -458,13 +480,7 @@ def main():
 			image = imageArray[:,:,z]
 			colorVals = [c for c in np.unique(image) if c!=0]
 			###Testing###
-			colorVals = []
-			colorVals.append(5724)
-			# colorVals.append(4766)
-			# colorVals.append(5731)
-			# colorVals.append(4917)
-			#colorVals.append(5875)
-			# colorVals.append(3681)
+			colorVals = [5724, 3480, 3656, 4514, 8397]
 			# 6228, 5724, 7287, 9632, 2547
 			# 5724 @ 880: 6758, @817: 5749
 			#############
