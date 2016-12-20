@@ -20,21 +20,49 @@ from scipy import ndimage
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 
-#def markBlob(x, y):
-
-
 def mouseClick(event,x,y,flags,param):
-	global zChange, firstClick, image
+	global zChange, firstClick, image, startBlob, erodeShape, erodeCount
 	if event == cv2.EVENT_LBUTTONDOWN:
-		print "value at " + str(x) + ", " + str(y)
-		print " " + str(image[y, x])
 		if firstClick and image[y, x] == 65000:
 			print "found first blob, continue"
-			firstClick = not firstClick
+			firstClick = False
 			zChange = True
+		elif erodeShape == True:
+			erodeShape = False
+			pixelValue = image[y, x]
+			pixels = np.where(image == pixelValue)
+			startBlob = zip(pixels[0], pixels[1])
+			box, dimensions = findBBDimensions(startBlob)
+			croppedStartBlob = zip(pixels[0] - box[0], pixels[1]- box[2])
+			img = np.zeros([dimensions[0]+1, dimensions[1]+1], np.uint8)
+			img[zip(*croppedStartBlob)] = 99999
+			kernel = np.ones((3,3),np.uint8)
+			erosion = cv2.erode(img,kernel,iterations = 1)
+			pixelsToInject = np.where(erosion != 0)
+			image[zip(*startBlob)] = 0
+			image[pixelsToInject[0] + box[0], pixelsToInject[1] + box[2]] = 65000
+			erodeCount += 1
+			#code.interact(local=locals())
 		else:
-			print "got next blob, coloring"
+			print "MOUSE " + str(y) + ' ' + str(x)
+			pixelValue = image[y, x]
+			pixels = np.where(image == pixelValue)
+			startBlob = zip(pixels[0], pixels[1])
 			zChange = True
+			if erodeCount > 0:
+
+def floodfill(x, y, oldColor, newColor):
+    # assume surface is a 2D image and surface[x][y] is the color at x, y.
+    theStack = [ (x, y) ]
+    while len(theStack) > 0:
+        x, y = theStack.pop()
+        if surface[x][y] != oldColor:
+            continue
+        surface[x][y] = newColor
+        theStack.append( (x + 1, y) )  # right
+        theStack.append( (x - 1, y) )  # left
+        theStack.append( (x, y + 1) )  # down
+        theStack.append( (x, y - 1) )  # up
 
 def findBBDimensions(listofpixels):
 	if len(listofpixels) == 0:
@@ -230,17 +258,19 @@ def resetStats(currentBlob, centroid1, blob2, freq, organicWindow, displacementB
 	return centroid2, overlap, coverage, freq2, coverage2, displacementBuffer
 
 def trackProcess(startBlob, imageArray, z):
+	global zChange
 	image = imageArray[:,:,z]
 	box, dimensions = findBBDimensions(startBlob)
-	color1 = image[startBlob[0]]
+	color1 = 65000
 	centroid1 = findCentroid(startBlob)
 	startZ = z
-	process = [startBlob]
+	zspace = 0
+	process = [(i[0], i[1], z) for i in startBlob]
 	shape = image.shape
 
 	currentBlob = startBlob
 
-	zspace = 0
+
 	d = 0
 	skip = 0
 	splitCount = 0
@@ -287,7 +317,8 @@ def trackProcess(startBlob, imageArray, z):
 
 		# figure out features that describe realtionship between shapes
 		q = np.where(image2 == clr)
-		blob2 = [(i[0],i[1], z+zspace) for i in q]
+		blob2 = zip(q[0], q[1])
+
 
 		centroid2 = findCentroid(blob2)
 		overlap = testOverlap(set(currentBlob), set(blob2))
@@ -295,16 +326,23 @@ def trackProcess(startBlob, imageArray, z):
 		freq2 = len(set(currentBlob) & set(blob2))
 		coverage2 = freq2 / float(len(blob2))
 
-		print str(coverage)
+		print str(coverage) + " " + str(coverage2) + " " + str(overlap)
 		#thresholds for deciding to add this blob
-		if coverage > 0.7:
-			process.append(blob2)
-			print blob2
+		if coverage > 0.75 and coverage2 > 0.75:
+			blob2 = [(i[0],i[1], z+zspace) for i in blob2]
+			process.extend(blob2)
 		else:
 			terminate = True
+			zChange = False
 
 
 	return zspace, process, color1
+
+def erodeShape():
+	img = np.zeros(shape, np.uint8)
+	img[zip(*blob2)] = 99999
+	kernel = np.ones((3,3),np.uint8)
+	erosion = cv2.erode(img,kernel,iterations = 1)
 
 # /*
 # ███    ███  █████  ██ ███    ██
@@ -326,13 +364,16 @@ indices_of_slices_to_be_removed = []
 ################################################################################
 
 def main():
-	global zChange
+	global zChange, erodeShape, erodeCount
 	global firstClick
 	global image
+	global startBlob
+	global viewingArray
 	zChange = 0
 	firstClick = True
 	blobSet = {}
-
+	viewZ = 0
+	erodeCount = 0
 	dirr = sys.argv[1]
 	#collecting Tiffs
 	list_of_image_paths = sorted(glob.glob(dirr +'*'))
@@ -355,6 +396,7 @@ def main():
 	z = 0
 
 	image = imageArray[:,:,z]
+	viewingArray = np.copy(imageArray)
 	colorVals = [c for c in np.unique(image) if c!=0]
 
 	blobToTrack = 6506
@@ -363,24 +405,41 @@ def main():
 
 	cv2.namedWindow('image', cv2.WINDOW_NORMAL)
 	cv2.setMouseCallback('image', mouseClick)
+	cv2.resizeWindow('image', 600,600)
+	cv2.namedWindow('Viewing Window', cv2.WINDOW_NORMAL)
 
+
+	blobSet[blobToTrack] = []
 	while(1):
 		if zChange:
 			zDiff, process, color1 = trackProcess(startBlob, imageArray, z)
-			blobSet[blobToTrack] = process
+			blobSet[blobToTrack].extend(process)
 			z += zDiff
 			if z >= zMax:
-				print blobSet
-				print len(blobSet[6506])
-				break
+				for each in blobSet[blobToTrack]:
+					viewingArray[each[0], each[1], each[2]] = 65000
+				zChange = False
+				z = zMax - 1
 			image = imageArray[:,:,z]
+
+
 		cv2.imshow('image',image)
+		cv2.imshow('Viewing Window', viewingArray[:,:,viewZ])
 
 		k = cv2.waitKey(1) & 0xFF
 		if k == 27:
 			break
+		elif k == ord('v'):
+			if viewZ > 1:
+				viewZ -= 1
+		elif k == ord('c'):  # Go down
+			if viewZ < zMax-1:
+				viewZ += 1
+		elif k == ord('w'):
+			 erodeShape = True
 
-	cv2.destroyAllWindows()
+
+
 
 if __name__ == "__main__":
 	main()
