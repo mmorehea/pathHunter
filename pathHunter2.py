@@ -20,7 +20,8 @@ from skimage.morphology import watershed
 from scipy import ndimage
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
-
+from scipy import signal
+from scipy import misc
 
 def findBBDimensions(listofpixels):
 	if len(listofpixels) == 0:
@@ -215,16 +216,28 @@ def resetStats(currentBlob, centroid1, blob2, freq, organicWindow, displacementB
 
 	return centroid2, overlap, coverage, freq2, coverage2, displacementBuffer
 
-def trackProcess(startBlob, imageArray, z):
-	image = imageArray[:,:,z]
+def upperLeftJustify(blob):
+	box, dimensions = findBBDimensions(blob)
+	transformedBlob = []
+	for point in blob:
+		transformedPoint = (point[0] - box[0], point[1] - box[2])
+		transformedBlob.append(transformedPoint)
+
+	return transformedBlob
+
+
+def trackProcess(startBlob, maskPaths, emPaths, z, shape):
+	maskImage = cv2.imread(maskPaths[z], -1)
+	emImage = cv2.imread(emPaths[z], -1)
 	box, dimensions = findBBDimensions(startBlob)
-	color1 = image[startBlob[0]]
+	color1 = maskImage[startBlob[0]]
 	centroid1 = findCentroid(startBlob)
 	startZ = z
 	process = [startBlob]
-	shape = image.shape
+	shape = maskImage.shape
 
-	image[zip(*startBlob)] = 0
+	# BLOCKING OUT
+	# image[zip(*startBlob)] = 0
 
 	currentBlob = startBlob
 
@@ -237,17 +250,19 @@ def trackProcess(startBlob, imageArray, z):
 	splitList = []
 	displacementBuffer = []
 	while terminate == False:
+
 		zspace += 1
 		blobsfound = []
 		try:
-			image2 = imageArray[:,:,z+zspace]
+			maskImage2 = cv2.imread(maskPaths[z+zspace], -1)
+			emImage2 = cv2.imread(emPaths[z+zspace], -1)
 		except:
 			terminate = True
 			s = '0'
 			continue
 
-		window = image2[box[0]:box[1], box[2]:box[3]]
-		organicWindow = image2[zip(*currentBlob)]
+		window = maskImage2[box[0]:box[1], box[2]:box[3]]
+		organicWindow = maskImage2[zip(*currentBlob)]
 		frequency = collections.Counter(organicWindow).most_common()
 
 		#check for blackness
@@ -273,8 +288,24 @@ def trackProcess(startBlob, imageArray, z):
 		# get those pixels that are that color
 
 		# figure out features that describe realtionship between shapes
-		q = np.where(image2 == clr)
-		blob2 = zip(q[0],q[1])
+		q = np.where(maskImage2 == clr)
+		nextBlob = zip(q[0],q[1])
+		box2, dimensions2 = findBBDimensions(nextBlob)
+
+		blob1 = upperLeftJustify(currentBlob)
+		blob2 = upperLeftJustify(nextBlob)
+
+		emBlob = np.zeros((dimensions[0] + 1, dimensions[1] + 1), np.uint8)
+		emBlob[zip(*blob1)] = emImage[zip(*currentBlob)]
+		emBlob2 = np.zeros((dimensions2[0] + 1, dimensions2[1] + 1), np.uint8)
+		emBlob2[zip(*blob2)] = emImage2[zip(*nextBlob)]
+
+		corr = signal.correlate2d(emBlob2, emBlob)
+		uniqueVals = np.unique(corr)
+		avg = float(sum(uniqueVals)) / len(uniqueVals)
+
+		print avg
+		code.interact(local=locals())
 
 		centroid2 = findCentroid(blob2)
 		overlap = testOverlap(set(currentBlob), set(blob2))
@@ -424,27 +455,36 @@ def trackProcess(startBlob, imageArray, z):
 # ██      ██ ██   ██ ██ ██   ████
 # */
 
-################################################################################
-# SETTINGS
-minimum_process_length = 0
-write_images_to = 'littleresult/'
-write_pickles_to = 'pickles/object'
-trace_objects = True
-build_resultStack = True
-load_stack_from_pickle_file = False
-indices_of_slices_to_be_removed = []
-################################################################################
-
-# python -m cProfile -o output pathHunter.py littlecrop/
-# python runsnake.py output
-
 def main():
-	maskPath = sys.argv[1]
-	emPath = sys.argv[2]
+	################################################################################
+	# SETTINGS
+	minimum_process_length = 0
+	write_images_to = 'littleresult/'
+	write_pickles_to = 'picklecrop/object'
+	trace_objects = True
+	build_resultStack = True
+	load_stack_from_pickle_file = False
+	indices_of_slices_to_be_removed = []
+	################################################################################
+	#Profiling:
+	# python -m cProfile -o output pathHunter.py littlecrop/
+	# python runsnake.py output
+
+	maskFolderPath = sys.argv[1]
+	emFolderPath = sys.argv[2]
+
 	#collecting Tiffs
-	list_of_image_paths = sorted(glob.glob(dirr +'*'))
-	list_of_image_paths = [i for j, i, in enumerate(list_of_image_paths) if j not in indices_of_slices_to_be_removed]
-	shape = cv2.imread(list_of_image_paths[0],-1).shape
+	maskPaths =  sorted(glob.glob(maskFolderPath +'*'))
+	emPaths = sorted(glob.glob(emFolderPath +'*'))
+
+	maskShape = cv2.imread(maskPaths[0],-1).shape
+	emShape = cv2.imread(emPaths[0],-1).shape
+
+	if len(maskPaths) != len(emPaths) or maskShape != emShape:
+		print 'Error, mask and EM data do not match'
+		trace_objects = False
+		build_resultStack = False
+
 
 	if trace_objects:
 		# general setup
@@ -452,53 +492,44 @@ def main():
 		images = []
 		objectCount = -1
 
-		#load all images and stack
-		for i, path in enumerate(list_of_image_paths):
-			im = cv2.imread(path, -1)
-			images.append(im)
-		print 'Loaded ' + str(len(images)) + ' images.'
-		imageArray = np.dstack(images)
-
-
 		# finds all unique colors inside of 3D volume
-		colorList = []
-		for z in xrange(imageArray.shape[2]):
-			colorList.extend([c for c in np.unique(imageArray[:,:,z]) if c!=0])
-		colorList = list(set(colorList))
-
-		# for x in xrange(imageArray.shape[0]):
-		# 	image = imageArray[x,:,:]
-		# 	cv2.imwrite(write_images_to + str(x) + '.tif', image)
-		# code.interact(local=locals())
+		# NEED TO CHANGE THIS:
+		# colorList = []
+		# for z in xrange(imageArray.shape[2]):
+		# 	colorList.extend([c for c in np.unique(imageArray[:,:,z]) if c!=0])
+		# colorList = list(set(colorList))
 
 		# begin searching through slices
-		for z in xrange(imageArray.shape[2]):
+
+		for z in xrange(len(maskPaths)):
 			###Testing###
-			if z != 0:
+			if z != 214:
 				continue
 			#############
 			# get only that slice and find unique blobs
-			image = imageArray[:,:,z]
+			image = cv2.imread(maskPaths[z], -1)
 			colorVals = [c for c in np.unique(image) if c!=0]
 			###Testing###
-			colorVals = [5724, 3480, 3656, 4514, 8397]
-			# 6228, 5724, 7287, 9632, 2547
-			# 5724 @ 880: 6758, @817: 5749
+			colorVals = [26501]
+			# 24661 @1: 24762, @9:26048, @214: 26501
 			#############
-			blobs = []
-			for color in colorVals:
-				wblob = np.where(image==color)
-				blob = zip(wblob[0], wblob[1])
-				blobs.append(blob)
-			blobs = sorted(blobs, key=len)
+			# blobs = []
+			# for color in colorVals:
+			# 	wblob = np.where(image==color)
+			# 	blob = zip(wblob[0], wblob[1])
+			# 	blobs.append(blob)
+			# blobs = sorted(blobs, key=len)
 
 			# with all blobs, begin searching one by one for objects
-			for i, startBlob in enumerate(blobs):
+			for i, startColor in enumerate(colorVals):
 				# print str(i+1) + '/' + str(len(blobs))
+
+				wblob = np.where(image==startColor)
+				startBlob = zip(wblob[0],wblob[1])
 
 				# blacks out first blob
 				start = timer()
-				startZ, process, color = trackProcess(startBlob, imageArray, z)
+				startZ, process, color = trackProcess(startBlob, maskPaths, emPaths, z, emShape)
 
 
 				if len(process) > minimum_process_length:
