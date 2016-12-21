@@ -20,8 +20,8 @@ from skimage.morphology import watershed
 from scipy import ndimage
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
-from scipy import signal
-from scipy import misc
+from skimage import data
+from skimage.feature import match_template
 
 def findBBDimensions(listofpixels):
 	if len(listofpixels) == 0:
@@ -233,7 +233,7 @@ def trackProcess(startBlob, maskPaths, emPaths, z, shape):
 	color1 = maskImage[startBlob[0]]
 	centroid1 = findCentroid(startBlob)
 	startZ = z
-	process = [startBlob]
+	process = {z:color1}
 	shape = maskImage.shape
 
 	# BLOCKING OUT
@@ -269,12 +269,8 @@ def trackProcess(startBlob, maskPaths, emPaths, z, shape):
 		if frequency[0][0] == 0 and len(frequency) == 1:
 			if d > 10:
 				terminate = True
-				while d > 0:
-					del process[-1]
-					d -= 1
 				continue
 			else:
-				process.append([])
 				d += 1
 				continue
 
@@ -295,16 +291,22 @@ def trackProcess(startBlob, maskPaths, emPaths, z, shape):
 		blob1 = upperLeftJustify(currentBlob)
 		blob2 = upperLeftJustify(nextBlob)
 
-		emBlob = np.zeros((dimensions[0] + 1, dimensions[1] + 1), np.uint8)
-		emBlob[zip(*blob1)] = emImage[zip(*currentBlob)]
-		emBlob2 = np.zeros((dimensions2[0] + 1, dimensions2[1] + 1), np.uint8)
-		emBlob2[zip(*blob2)] = emImage2[zip(*nextBlob)]
+		emBlob = emImage[box[0]:box[1],box[2]:box[3]]
 
-		corr = signal.correlate2d(emBlob2, emBlob)
-		uniqueVals = np.unique(corr)
+		# emBlob2 = np.zeros((dimensions2[0] + 1, dimensions2[1] + 1), np.uint8)
+		# emBlob2[zip(*blob2)] = emImage2[zip(*nextBlob)]
+
+		emBlob2 = emImage2[box2[0]:box2[1],box2[2]:box2[3]]
+
+		if emBlob.size > emBlob2.size:
+			emBlob, emBlob2 = emBlob2, emBlob
+
+		result = match_template(emBlob2, emBlob)
+		uniqueVals = np.unique(result)
 		avg = float(sum(uniqueVals)) / len(uniqueVals)
+		maximum = np.max(result)
 
-		print avg
+		print avg, maximum
 		code.interact(local=locals())
 
 		centroid2 = findCentroid(blob2)
@@ -314,118 +316,18 @@ def trackProcess(startBlob, maskPaths, emPaths, z, shape):
 		coverage2 = freq2 / float(len(blob2))
 		# shapeDiff = shapeMatch(currentBlob, blob2, shape)
 
-		# if zspace == 188:
-		# 	code.interact(local=locals())
-
-		# print shapeDiff
-		# img = np.zeros(shape,np.uint16)
-		# img[zip(*blob2)] = 99999
-		# cv2.imshow('a',img)
-		# cv2.waitKey()
-		# code.interact(local=locals())
-		if skip < 4:
-			if coverage2 < 0.5:
-				process.append([])
-				skip += 1
-				continue
-		else:
-			terminate = True
-			skip = 0
-			continue
+		# if skip < 4:
+		# 	if coverage2 < 0.5:
+		# 		process.append([])
+		# 		skip += 1
+		# 		continue
+		# else:
+		# 	terminate = True
+		# 	skip = 0
+		# 	continue
 
 		blobsfound.append(blob2)
 		skip = 0
-
-		# dx = centroid2[0] - centroid1[0]
-		# dy = centroid2[1] - centroid1[1]
-		# displacementBuffer.append((dx,dy))
-		# if len(displacementBuffer) > 5:
-		# 	del displacementBuffer[0]
-		# #collect average displacement buffer
-		# dxs = [x[0] for x in displacementBuffer]
-		# dys = [x[1] for x in displacementBuffer]
-		# avgDisplacement_last5 = (float(sum(dxs))/5, float(sum(dys))/5)
-
-		# if bool(coverage > 0.7) ^ bool(coverage2 > 0.7):
-		# 	img = np.zeros(shape, np.uint8)
-		# 	img[zip(*blob2)] = 99999
-		# 	kernel = np.ones((3,3),np.uint8)
-		# 	erosion = cv2.erode(img,kernel,iterations = 1)
-		# 	im2, contours, hierarchy = cv2.findContours(erosion,cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)
-		#
-		# 	subBlobs = []
-		# 	for cnt in contours:
-		# 		mask = np.zeros(img.shape,np.uint8)
-		# 		cv2.drawContours(mask,[cnt],0,255,-1)
-		# 		pixelpoints = np.nonzero(mask)
-		# 		subBlobs.append(zip(pixelpoints[0], pixelpoints[1]))
-		#
-		# 	blob2 = orderByPercentOverlap(subBlobs, currentBlob)[0][0]
-		# 	centroid2, overlap, coverage, freq2, coverage2, displacementBuffer = resetStats(currentBlob, centroid1, blob2, freq, organicWindow, displacementBuffer)
-		#
-		#
-		# if coverage > 0.7 and coverage2 > 0.7:
-		# 	blobsfound.append(blob2)
-		# 	splitCount = 0
-		#
-		# else:
-		# 	if splitCount < 8:
-		# 		splitCount += 1
-		# 		blob2 = currentBlob
-		# 		blobsfound.append(blob2)
-		# 	else:
-		# 		terminate = True
-		# 		splitCount = 0
-		# 		continue
-
-
-
-		#thresholds for deciding to add this blob
-		# if coverage > 0.75:
-		# 	if overlap > 0.75:
-		# 		blobsfound.append(blob2)
-		# 		splitRecent = False
-		# 		splitCount = 0
-		# 	elif overlap > 0.5 and d > 3:
-		# 		blobsfound.append(blob2)
-		# 		splitRecent = False
-		# 		splitCount = 0
-		# 	elif overlap > 0.1:
-		# 		# if splitCount < 8:
-		# 		# 	splitCount += 1
-		# 		# 	blob2 = currentBlob
-		# 		# 	blob2 = transformBlob(blob2, avgDisplacement_last5)
-		# 		# 	blobsfound.append(blob2)
-		# 		# else:
-		# 		# 	terminate = True
-		# 		# 	splitRecent = False
-		# 		# 	splitCount = 0
-		# 		# 	continue
-		#
-		# 		subBlobs, splitPoint = waterShed(blob2, shape)
-		# 		subBlobs, overlapVals = orderByPercentOverlap(subBlobs, currentBlob)
-		# 		for i, sb in enumerate(subBlobs):
-		# 			if overlapVals[i] > 0.1:
-		# 				blobsfound.append(sb)
-		# 		if len(blobsfound) == 0:
-		# 			try:
-		# 				blobsfound.append(subBlobs[0])
-		# 			except:
-		# 				blobsfound.append(blob2)
-		# 		splitRecent = True
-		# 		splitCount = 1
-		#
-		# 	else:
-		# 		process.append([])
-		# 		splitRecent = False
-		# 		splitCount = 0
-		# 		continue
-		# else:
-		# 	blobsfound.append(blob2)
-		# 	splitCount = 0
-
-		# code.interact(local=locals())
-
 
 		if terminate == False:
 
@@ -489,7 +391,6 @@ def main():
 	if trace_objects:
 		# general setup
 		chainLengths = []
-		images = []
 		objectCount = -1
 
 		# finds all unique colors inside of 3D volume
@@ -503,15 +404,17 @@ def main():
 
 		for z in xrange(len(maskPaths)):
 			###Testing###
-			if z != 214:
+			if z != 0:
 				continue
 			#############
 			# get only that slice and find unique blobs
 			image = cv2.imread(maskPaths[z], -1)
 			colorVals = [c for c in np.unique(image) if c!=0]
 			###Testing###
-			colorVals = [26501]
+			colorVals = [22013, 20601, 21131, 21055]
 			# 24661 @1: 24762, @9:26048, @214: 26501
+			# 22013 @62: 22568 @63: 21963 @67: 22517 @68: 22971, @73: 22946
+			# @258: 27384
 			#############
 			# blobs = []
 			# for color in colorVals:
