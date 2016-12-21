@@ -21,16 +21,21 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 
 def mouseClick(event,x,y,flags,param):
-	global zChange, firstClick, image, startBlob, erodeShape, erodeCount
+	global zChange, firstClick, image, startBlob, erodeShape, erodeCount, color
 	if event == cv2.EVENT_LBUTTONDOWN:
-		if firstClick and image[y, x] == 65000:
-			print "found first blob, continue"
+		print image[y, x]
+		if firstClick:
+			color = image[y, x]
+
+			pixels = np.where(np.any(image == color, axis=-1))
+			code.interact(local=locals())
+			startBlob = zip(pixels[0], pixels[1])
 			firstClick = False
 			zChange = True
 		elif erodeShape == True:
 			erodeShape = False
 			pixelValue = image[y, x]
-			pixels = np.where(image == pixelValue)
+			pixels = np.where(np.any(image == pixelValue, axis=-1))
 			startBlob = zip(pixels[0], pixels[1])
 			box, dimensions = findBBDimensions(startBlob)
 			croppedStartBlob = zip(pixels[0] - box[0], pixels[1]- box[2])
@@ -260,9 +265,8 @@ def resetStats(currentBlob, centroid1, blob2, freq, organicWindow, displacementB
 
 def trackProcess(startBlob, imageArray, z):
 	global zChange
-	image = imageArray[:,:,z]
+	image = imageArray[z]
 	box, dimensions = findBBDimensions(startBlob)
-	color1 = 65000
 	centroid1 = findCentroid(startBlob)
 	startZ = z
 	zspace = 0
@@ -284,15 +288,16 @@ def trackProcess(startBlob, imageArray, z):
 		print zspace
 		blobsfound = []
 		try:
-			image2 = imageArray[:,:,z+zspace]
+			image2 = imageArray[z+zspace]
 		except:
 			terminate = True
 			s = '0'
 			continue
 
 		window = image2[box[0]:box[1], box[2]:box[3]]
-		organicWindow = image2[zip(*currentBlob)]
-		frequency = collections.Counter(organicWindow).most_common()
+		organicWindow = image2[zip(*currentBlob)].tolist()
+		organicWindowString = convertColorsToStr(organicWindow)
+		frequency = collections.Counter(organicWindowString).most_common()
 
 		#check for blackness
 		if frequency[0][0] == 0 and len(frequency) == 1:
@@ -309,15 +314,16 @@ def trackProcess(startBlob, imageArray, z):
 
 		# find largest color that is not black
 		for each in frequency:
-			if each[0] == 0:
+			if each[0] == '[0, 0, 0]':
 				continue
 			clr, freq = each
 			break
 
 		# get those pixels that are that color
-
 		# figure out features that describe realtionship between shapes
-		q = np.where(image2 == clr)
+		clr = colorStringToColor(clr)
+		code.interact(local=locals())
+		q = np.where(np.any(image2 == clr, axis=-1))
 		blob2 = zip(q[0], q[1])
 
 
@@ -337,13 +343,20 @@ def trackProcess(startBlob, imageArray, z):
 			zChange = False
 
 
-	return zspace, process, color1
+	return zspace, process
 
 def erodeShape():
 	img = np.zeros(shape, np.uint8)
 	img[zip(*blob2)] = 99999
 	kernel = np.ones((3,3),np.uint8)
 	erosion = cv2.erode(img,kernel,iterations = 1)
+
+def convertColorsToStr(l):
+	return [str(i) for i in l]
+
+def colorStringToColor(s):
+	import ast
+	return ast.literal_eval(s)
 
 # /*
 # ███    ███  █████  ██ ███    ██
@@ -365,16 +378,16 @@ indices_of_slices_to_be_removed = []
 ################################################################################
 
 def main():
-	global zChange, erodeShape, erodeCount
+	global zChange, erodeShape, erodeCount, color
 	global firstClick
 	global image
 	global startBlob
-	global viewingArray
 	zChange = 0
 	firstClick = True
 	blobSet = {}
 	viewZ = 0
 	erodeCount = 0
+	colorKey = 0
 	dirr = sys.argv[1]
 	#collecting Tiffs
 	list_of_image_paths = sorted(glob.glob(dirr +'*'))
@@ -383,26 +396,12 @@ def main():
 	shape = cv2.imread(list_of_image_paths[0],-1).shape
 	images = []
 	for i, path in enumerate(list_of_image_paths):
-		im = cv2.imread(path, -1)
+		im = cv2.imread(path, 1)
 		images.append(im)
 	print 'Loaded ' + str(len(images)) + ' images.'
-	imageArray = np.dstack(images)
-
-	# finds all unique colors inside of 3D volume
-	colorList = []
-	for z in xrange(imageArray.shape[2]):
-		colorList.extend([c for c in np.unique(imageArray[:,:,z]) if c!=0])
-	colorList = list(set(colorList))
-
 	z = 0
-
-	image = imageArray[:,:,z]
-	viewingArray = np.copy(imageArray)
-	colorVals = [c for c in np.unique(image) if c!=0]
-
-	blobToTrack = 6506
-	startBlob = zip(np.where(image == blobToTrack)[0], np.where(image == blobToTrack)[1])
-	image[np.where(image == blobToTrack)] = 65000
+	image = images[z]
+	viewingImages = np.copy(images)
 
 	cv2.namedWindow('image', cv2.WINDOW_NORMAL)
 	cv2.setMouseCallback('image', mouseClick)
@@ -410,22 +409,22 @@ def main():
 	cv2.namedWindow('Viewing Window', cv2.WINDOW_NORMAL)
 
 
-	blobSet[blobToTrack] = []
+	blobSet[colorKey] = []
 	while(1):
 		if zChange:
-			zDiff, process, color1 = trackProcess(startBlob, imageArray, z)
-			blobSet[blobToTrack].extend(process)
+			zDiff, process = trackProcess(startBlob, images, z)
+			blobSet[colorKey].extend(process)
 			z += zDiff
 			if z >= zMax:
-				for each in blobSet[blobToTrack]:
-					viewingArray[each[0], each[1], each[2]] = 65000
+				for each in blobSet[colorKey]:
+					viewingImages[each[0], each[1], each[2]] = color
 				zChange = False
 				z = zMax - 1
-			image = imageArray[:,:,z]
+			image = images[z]
 
 
 		cv2.imshow('image',image)
-		cv2.imshow('Viewing Window', viewingArray[:,:,viewZ])
+		cv2.imshow('Viewing Window', viewingImages[viewZ])
 
 		k = cv2.waitKey(1) & 0xFF
 		if k == 27:
