@@ -49,7 +49,8 @@ def mouseClick(event,x,y,flags,param):
 			pixels = np.where(image == pixelValue)
 			startBlob = zip(pixels[0], pixels[1])
 			zChange = True
-			if erodeCount > 0:
+			#if erodeCount > 0:
+
 
 def floodfill(x, y, oldColor, newColor):
     # assume surface is a 2D image and surface[x][y] is the color at x, y.
