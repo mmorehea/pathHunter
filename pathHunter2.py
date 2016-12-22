@@ -226,20 +226,47 @@ def upperLeftJustify(blob):
 	return transformedBlob
 
 
-def trackProcess(startBlob, maskPaths, emPaths, z, shape):
+def trackProcess(color1, maskPaths, emPaths, z, shape):
+	process[z] = [color1]
+	maskImage = cv2.imread(maskPaths[z], -1)
+	currentBlob = np.where(maskImage == color1)
+
+	while terminate == False:
+		foundList = []
+
+		maskImage1 = cv2.imread(maskPaths[z], -1)
+		emImage1 = cv2.imread(emPaths[z], -1)
+
+		box1, dimensions1 = findBBDimensions(currentBlob)
+		color1 = maskImage1[currentBlob[0]]
+		centroid1 = findCentroid(currentBlob)
+
+		if z + 1 < len(maskPaths):
+			maskImage2 = cv2.imread(maskPaths[z], -1)
+			emImage2 = cv2.imread(emPaths[z], -1)
+		else:
+			terminate = True
+			continue
+
+
+
+		maskImage1[zip(*currentBlob)] = 0
+		cv2.imwrite(maskPaths[z], maskImage1)
+
+
 	maskImage = cv2.imread(maskPaths[z], -1)
 	emImage = cv2.imread(emPaths[z], -1)
-	box, dimensions = findBBDimensions(startBlob)
-	color1 = maskImage[startBlob[0]]
-	centroid1 = findCentroid(startBlob)
-	startZ = z
+
 	process = {z:color1}
 	shape = maskImage.shape
 
 	# BLOCKING OUT
 	# image[zip(*startBlob)] = 0
 
-	currentBlob = startBlob
+	currentBlob = np.where(maskImage == startColor)
+	box, dimensions = findBBDimensions(currentBlob)
+	color1 = maskImage[startBlob[0]]
+	centroid1 = findCentroid(startBlob)
 
 	zspace = 0
 	d = 0
@@ -357,6 +384,7 @@ def trackProcess(startBlob, maskPaths, emPaths, z, shape):
 # ██      ██ ██   ██ ██ ██   ████
 # */
 
+
 def main():
 	################################################################################
 	# SETTINGS
@@ -366,11 +394,12 @@ def main():
 	trace_objects = True
 	build_resultStack = True
 	load_stack_from_pickle_file = False
-	indices_of_slices_to_be_removed = []
 	################################################################################
 	#Profiling:
 	# python -m cProfile -o output pathHunter.py littlecrop/
 	# python runsnake.py output
+
+	masterColorList = pickle.load(open('masterColorList.p','rb'))
 
 	maskFolderPath = sys.argv[1]
 	emFolderPath = sys.argv[2]
@@ -393,15 +422,7 @@ def main():
 		chainLengths = []
 		objectCount = -1
 
-		# finds all unique colors inside of 3D volume
-		# NEED TO CHANGE THIS:
-		# colorList = []
-		# for z in xrange(imageArray.shape[2]):
-		# 	colorList.extend([c for c in np.unique(imageArray[:,:,z]) if c!=0])
-		# colorList = list(set(colorList))
-
 		# begin searching through slices
-
 		for z in xrange(len(maskPaths)):
 			###Testing###
 			if z != 0:
@@ -427,33 +448,44 @@ def main():
 			for i, startColor in enumerate(colorVals):
 				# print str(i+1) + '/' + str(len(blobs))
 
-				wblob = np.where(image==startColor)
-				startBlob = zip(wblob[0],wblob[1])
-
 				# blacks out first blob
 				start = timer()
-				startZ, process, color = trackProcess(startBlob, maskPaths, emPaths, z, emShape)
+				process = trackProcess(startColor, maskPaths, emPaths, z, emShape)
 
+				processLength = np.max(np.array(process.keys())) - np.min(np.array(process.keys()))
 
-				if len(process) > minimum_process_length:
+				if processLength > minimum_process_length:
 					objectCount += 1
-					color = colorList[objectCount]
+
+					if objectCount < len(masterColorList):
+						color = masterColorList[objectCount]
+					else:
+						while True:
+							color = random.choice(range(2**16))
+							if color != 0 and color not in masterColorList:
+								masterColorList.append(color)
+								break
+							if len(masterColorList) >= 2**16 - 1:
+								print 'ERROR: Too many objects for color range.'
+
 					print '\n'
 					print objectCount
 					end = timer()
 					print(end - start)
 					print '\n'
-					chainLengths.append((objectCount, color, len(process)))
-					pickle.dump((startZ, process, color), open(write_pickles_to + str(objectCount) + '.p', 'wb'))
+					chainLengths.append((objectCount, color, processLength))
+					pickle.dump((process, color), open(write_pickles_to + str(objectCount) + '.p', 'wb'))
 
 
 		print 'Number of chains: ' + str(len(chainLengths))
 		print 'Average chain length: ' + str(float(sum([x[2] for x in chainLengths]))/len(chainLengths))
+		print '\nSummarizing...'
 		# print s
 
 		if os.path.exists('summary.txt'):
 			os.remove('summary.txt')
 
+		# Make sure this does what I expect it to:
 		chainLengths = sorted(chainLengths)[::-1]
 
 		with open('summary.txt','w') as f:
@@ -500,27 +532,6 @@ def main():
 		for z in xrange(resultArray.shape[2]):
 			image = resultArray[:,:,z]
 			cv2.imwrite(write_images_to + list_of_image_paths[z][list_of_image_paths[z].index('/')+1:], image)
-
-		# diffarray = [(measurement[1]**2)/(4*3.1415926) - measurement[0] for measurement in measurementsList]
-		#
-		# ratarray = [float(measurement[1])/measurement[0] for measurement in measurementsList]
-
-		# plt.figure(1)
-		# plt.subplot(211)
-		# plt.plot(zip(*measurementsList)[0])
-		# plt.subplot(212)
-		# plt.plot(zip(*measurementsList)[1])
-		# plt.figure(2)
-		# plt.plot(diffarray)
-		# plt.figure(3)
-		# plt.plot(ratarray)
-		# plt.show()
-		# plt.figure(1)
-		# plt.plot(coverage2List)
-		# plt.figure(2)
-		# plt.plot(coverage2Deviance)
-		# plt.show()
-		# code.interact(local=locals())
 
 
 if __name__ == "__main__":
