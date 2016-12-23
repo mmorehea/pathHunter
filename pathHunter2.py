@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-
 import argparse
 import cv2
 import glob
@@ -163,15 +162,6 @@ def findNearest(img, startPoint):
 def distance(point1, point2):
 	return ((point2[0] - point1[0])**2 + (point2[1] - point1[1])**2)**0.5
 
-def display(blob):
-
-	img = np.zeros(shape, np.uint16)
-	for pixel in blob:
-		img[pixel] = 99999
-
-	cv2.imshow(str(random.random()),img)
-	cv2.waitKey()
-
 def transformBlob(blob, displacement):
 	dx, dy = displacement
 
@@ -216,6 +206,17 @@ def resetStats(currentBlob, centroid1, blob2, freq, organicWindow, displacementB
 
 	return centroid2, overlap, coverage, freq2, coverage2, displacementBuffer
 
+def getCombos(l):
+	combos = []
+	for i, item in enumerate(list):
+		n = i
+		while n < len(l):
+			if i == n:
+				continue
+			combos.append(i, n)
+			n += 1
+	code.interact(local=locals())
+
 def upperLeftJustify(blob):
 	box, dimensions = findBBDimensions(blob)
 	transformedBlob = []
@@ -225,17 +226,24 @@ def upperLeftJustify(blob):
 
 	return transformedBlob
 
-
+# ████████ ██████   █████   ██████ ██   ██         ██████  ██████   ██████   ██████ ███████ ███████ ███████
+#    ██    ██   ██ ██   ██ ██      ██  ██          ██   ██ ██   ██ ██    ██ ██      ██      ██      ██
+#    ██    ██████  ███████ ██      █████           ██████  ██████  ██    ██ ██      █████   ███████ ███████
+#    ██    ██   ██ ██   ██ ██      ██  ██          ██      ██   ██ ██    ██ ██      ██           ██      ██
+#    ██    ██   ██ ██   ██  ██████ ██   ██ ███████ ██      ██   ██  ██████   ██████ ███████ ███████ ███████
 def trackProcess(color1, maskPaths, emPaths, z, shape):
+	#Initialize chain
+	process = {}
 	process[z] = [color1]
-	maskImage = cv2.imread(maskPaths[z], -1)
-	currentBlob = np.where(maskImage == color1)
+	maskImage1 = cv2.imread(maskPaths[z], -1)
+	emImage1 = cv2.imread(emPaths[z], -1)
+	currentBlob = zip(np.where(maskImage1 == color1)[0],np.where(maskImage1 == color1)[1])
+	z += 1
 
+	terminate = False
 	while terminate == False:
+		#FoundList is a mixed-type list that can contain any number of color IDs or lists of pixel points that, taken together, comprise the next blob in the chain
 		foundList = []
-
-		maskImage1 = cv2.imread(maskPaths[z], -1)
-		emImage1 = cv2.imread(emPaths[z], -1)
 
 		box1, dimensions1 = findBBDimensions(currentBlob)
 		color1 = maskImage1[currentBlob[0]]
@@ -248,47 +256,12 @@ def trackProcess(color1, maskPaths, emPaths, z, shape):
 			terminate = True
 			continue
 
+		emBlob = emImage1[box1[0]:box1[1],box1[2]:box1[3]]
+		result = match_template(emImage2, emBlob)
 
+		code.interact(local=locals())
 
-		maskImage1[zip(*currentBlob)] = 0
-		cv2.imwrite(maskPaths[z], maskImage1)
-
-
-	maskImage = cv2.imread(maskPaths[z], -1)
-	emImage = cv2.imread(emPaths[z], -1)
-
-	process = {z:color1}
-	shape = maskImage.shape
-
-	# BLOCKING OUT
-	# image[zip(*startBlob)] = 0
-
-	currentBlob = np.where(maskImage == startColor)
-	box, dimensions = findBBDimensions(currentBlob)
-	color1 = maskImage[startBlob[0]]
-	centroid1 = findCentroid(startBlob)
-
-	zspace = 0
-	d = 0
-	skip = 0
-	splitCount = 0
-	terminate = False
-	splitRecent = False
-	splitList = []
-	displacementBuffer = []
-	while terminate == False:
-
-		zspace += 1
-		blobsfound = []
-		try:
-			maskImage2 = cv2.imread(maskPaths[z+zspace], -1)
-			emImage2 = cv2.imread(emPaths[z+zspace], -1)
-		except:
-			terminate = True
-			s = '0'
-			continue
-
-		window = maskImage2[box[0]:box[1], box[2]:box[3]]
+		window = maskImage2[box1[0]:box1[1], box1[2]:box1[3]]
 		organicWindow = maskImage2[zip(*currentBlob)]
 		frequency = collections.Counter(organicWindow).most_common()
 
@@ -301,22 +274,22 @@ def trackProcess(color1, maskPaths, emPaths, z, shape):
 				d += 1
 				continue
 
-		# find largest color that is not black
-		for each in frequency:
-			if each[0] == 0:
-				continue
-			clr, freq = each
-			break
+		nonzero_regions = [f[0] for f in frequency if f[0] != 0]
+		# find all the candidate 2D regions and place in a list. Includes all sub-regions obtained through erosion and all combinations of regions
+		candidateBlobs, candidateShortHand = getCandidates(nonzero_regions)
 
-		# get those pixels that are that color
+		# collect affinity data for the candidate regions as a list of tuples, each tuple containing the following data: [0]: distance between centroids, [1]: normalized cross-correlation result
+		affinityData = []
+		for color2, freq in candidateRegions:
 
-		# figure out features that describe realtionship between shapes
-		q = np.where(maskImage2 == clr)
-		nextBlob = zip(q[0],q[1])
-		box2, dimensions2 = findBBDimensions(nextBlob)
+			q = np.where(maskImage2 == color2)
+			nextBlob = zip(q[0],q[1])
+			box2, dimensions2 = findBBDimensions(nextBlob)
 
 		blob1 = upperLeftJustify(currentBlob)
 		blob2 = upperLeftJustify(nextBlob)
+
+		# figure out features that describe realtionship between shapes
 
 		emBlob = emImage[box[0]:box[1],box[2]:box[3]]
 
@@ -353,38 +326,136 @@ def trackProcess(color1, maskPaths, emPaths, z, shape):
 		# 	skip = 0
 		# 	continue
 
-		blobsfound.append(blob2)
+		foundList.append(color2)
 		skip = 0
 
+		# Block out the current blob in the mask image stack
+		maskImage1[zip(*currentBlob)] = 0
+		cv2.imwrite(maskPaths[z], maskImage1)
+
+		# Add foundList to the process
+		process[z] = foundList
+
+		# If not terminating, reset variables and increment z
 		if terminate == False:
+			currentBlob = nextBlob
+			color1 = color2
 
-			newBlob = []
-			for b in blobsfound:
-				newBlob += b
+			maskImage1 = maskImage2
+			emImage1 = emImage2
 
-			# shapeDiff = shapeMatch(currentBlob, newBlob, shape)
+			z += 1
 
-			# print str(zspace) + '. ' + str(overlap) + ' ' + str(coverage) + ' ' + str(coverage2) + ' ' + str(shapeDiff)
 
-			#Probably need to do the stuff below when I terminate as well
-			color1 = image2[newBlob[0]]
-			image2[zip(*newBlob)] = 0
-			process.append(newBlob)
-			box,dimensions = findBBDimensions(newBlob)
-			d = 0
-			centroid1 = findCentroid(newBlob)
-			currentBlob = newBlob
-	return startZ, process, color1
+	return process
 
-# /*
+# ████████ ██████   █████   ██████ ███████          ██████  ██████       ██ ███████  ██████ ████████ ███████
+#    ██    ██   ██ ██   ██ ██      ██              ██    ██ ██   ██      ██ ██      ██         ██    ██
+#    ██    ██████  ███████ ██      █████           ██    ██ ██████       ██ █████   ██         ██    ███████
+#    ██    ██   ██ ██   ██ ██      ██              ██    ██ ██   ██ ██   ██ ██      ██         ██         ██
+#    ██    ██   ██ ██   ██  ██████ ███████ ███████  ██████  ██████   █████  ███████  ██████    ██    ███████
+def traceObjects(minimum_process_length, write_pickles_to, masterColorList, maskPaths, emPaths, maskShape, emShape):
+	# general setup
+	chainLengths = []
+	objectCount = -1
+
+	# begin searching through slices
+	for z in xrange(len(maskPaths)):
+		###Testing###
+		if z != 0:
+			continue
+		#############
+		# get the unique colors in that slice
+		image = cv2.imread(maskPaths[z], -1)
+		colorVals = [c for c in np.unique(image) if c!=0]
+		###Testing###
+		colorVals = [24509]
+		# 24661 @1: 24762, @9:26048, @214: 26501
+		# 22013 @62: 22568 @63: 21963 @67: 22517 @68: 22971, @73: 22946
+		# @258: 27384
+		#############
+
+		# with all colors, begin tracing objects one by one
+		for i, startColor in enumerate(colorVals):
+			start = timer()
+			# process is a dictionary representing a 3D process, where each key is a z index, and each value is a list of 2D regions
+			process = trackProcess(startColor, maskPaths, emPaths, z, emShape)
+
+			processLength = np.max(np.array(process.keys())) - np.min(np.array(process.keys()))
+
+			if processLength > minimum_process_length:
+				objectCount += 1
+
+				# This block ensures that each new process gets assigned a unique color in the 16 bit range
+				if objectCount < len(masterColorList):
+					color = masterColorList[objectCount]
+				else:
+					while True:
+						color = random.choice(range(2**16))
+						if color != 0 and color not in masterColorList:
+							masterColorList.append(color)
+							break
+						if len(masterColorList) >= 2**16 - 1:
+							print 'ERROR: Too many objects for color range.'
+
+				print '\n'
+				print objectCount
+				end = timer()
+				print(end - start)
+				print '\n'
+				chainLengths.append((objectCount, color, processLength))
+				pickle.dump((process, color), open(write_pickles_to + str(objectCount) + '.p', 'wb'))
+
+
+	print 'Number of chains: ' + str(len(chainLengths))
+	print 'Average chain length: ' + str(float(sum([x[2] for x in chainLengths]))/len(chainLengths))
+	print '\nSummarizing...'
+	# print s
+
+	if os.path.exists('summary.txt'):
+		os.remove('summary.txt')
+
+	# Need to make sure this does what I expect it to:
+	chainLengths = sorted(chainLengths)[::-1]
+
+	# Summarize information on the chains that were found
+	with open('summary.txt','w') as f:
+		for i,each in enumerate(chainLengths):
+			f.write(str(chainLengths[i][0]) + ' ' + str(chainLengths[i][1]) + ' ' + str(chainLengths[i][2]) + '\n')
+
+# ██████  ██    ██ ██ ██      ██████          ██████  ███████ ███████ ██    ██ ██   ████████      ███████ ████████  █████   ██████ ██   ██
+# ██   ██ ██    ██ ██ ██      ██   ██         ██   ██ ██      ██      ██    ██ ██      ██         ██         ██    ██   ██ ██      ██  ██
+# ██████  ██    ██ ██ ██      ██   ██         ██████  █████   ███████ ██    ██ ██      ██         ███████    ██    ███████ ██      █████
+# ██   ██ ██    ██ ██ ██      ██   ██         ██   ██ ██           ██ ██    ██ ██      ██              ██    ██    ██   ██ ██      ██  ██
+# ██████   ██████  ██ ███████ ██████  ███████ ██   ██ ███████ ███████  ██████  ███████ ██ ███████ ███████    ██    ██   ██  ██████ ██   ██
+def buildResultStack(write_images_to, write_pickles_to, maskPaths, maskShape):
+	picklePaths = sorted(glob.glob(write_pickles_to + '*.p'))
+
+	for z in xrange(len(maskPaths)):
+		resultImg = np.zeros(maskShape, np.uint16)
+
+		for path in picklePaths:
+			process, color = pickle.load(open(path, 'rb'))
+
+			if z in process.keys():
+				for each in process[z]:
+					if str(each).isdigit():
+						resultImg[np.where(cv2.imread(maskPaths[z], -1)==each)] = color
+					else:
+						resultImg[zip(*each)] = color
+		cv2.imwrite(write_images_to + maskPaths[z][maskPaths[z].index('/')+1:], resultImg)
+
+		print '\n'
+		print 'Building result stack ' + str(z+1) + '/' + str(len(maskPaths))
+		end = timer()
+		print(end - start)
+		print '\n'
+
 # ███    ███  █████  ██ ███    ██
 # ████  ████ ██   ██ ██ ████   ██
 # ██ ████ ██ ███████ ██ ██ ██  ██
 # ██  ██  ██ ██   ██ ██ ██  ██ ██
 # ██      ██ ██   ██ ██ ██   ████
-# */
-
-
 def main():
 	################################################################################
 	# SETTINGS
@@ -395,144 +466,41 @@ def main():
 	build_resultStack = True
 	load_stack_from_pickle_file = False
 	################################################################################
-	#Profiling:
+	# Profiling:
 	# python -m cProfile -o output pathHunter.py littlecrop/
 	# python runsnake.py output
 
+	# Get list of colors to use in the result stack
 	masterColorList = pickle.load(open('masterColorList.p','rb'))
 
 	maskFolderPath = sys.argv[1]
 	emFolderPath = sys.argv[2]
 
-	#collecting Tiffs
+	# Collect tiffs
 	maskPaths =  sorted(glob.glob(maskFolderPath +'*'))
 	emPaths = sorted(glob.glob(emFolderPath +'*'))
 
 	maskShape = cv2.imread(maskPaths[0],-1).shape
 	emShape = cv2.imread(emPaths[0],-1).shape
 
+	# Make sure EM and mask data correspond
 	if len(maskPaths) != len(emPaths) or maskShape != emShape:
 		print 'Error, mask and EM data do not match'
 		trace_objects = False
 		build_resultStack = False
+	else:
+		# Copy all mask images into working folder so that original data is not modified
+		for impath in maskPaths:
+			img = cv2.imread(impath,-1)
+			cv2.imwrite('workingImgStack' + impath[impath.index('/'):], img)
+		maskFolderPath = 'workingImgStack/'
+		maskPaths =  sorted(glob.glob(maskFolderPath +'*'))
 
+	# Trace each process in the input stack and save as pickle file
+	if trace_objects: traceObjects(minimum_process_length, write_pickles_to, masterColorList, maskPaths, emPaths, maskShape, emShape)
 
-	if trace_objects:
-		# general setup
-		chainLengths = []
-		objectCount = -1
-
-		# begin searching through slices
-		for z in xrange(len(maskPaths)):
-			###Testing###
-			if z != 0:
-				continue
-			#############
-			# get only that slice and find unique blobs
-			image = cv2.imread(maskPaths[z], -1)
-			colorVals = [c for c in np.unique(image) if c!=0]
-			###Testing###
-			colorVals = [22013, 20601, 21131, 21055]
-			# 24661 @1: 24762, @9:26048, @214: 26501
-			# 22013 @62: 22568 @63: 21963 @67: 22517 @68: 22971, @73: 22946
-			# @258: 27384
-			#############
-			# blobs = []
-			# for color in colorVals:
-			# 	wblob = np.where(image==color)
-			# 	blob = zip(wblob[0], wblob[1])
-			# 	blobs.append(blob)
-			# blobs = sorted(blobs, key=len)
-
-			# with all blobs, begin searching one by one for objects
-			for i, startColor in enumerate(colorVals):
-				# print str(i+1) + '/' + str(len(blobs))
-
-				# blacks out first blob
-				start = timer()
-				process = trackProcess(startColor, maskPaths, emPaths, z, emShape)
-
-				processLength = np.max(np.array(process.keys())) - np.min(np.array(process.keys()))
-
-				if processLength > minimum_process_length:
-					objectCount += 1
-
-					if objectCount < len(masterColorList):
-						color = masterColorList[objectCount]
-					else:
-						while True:
-							color = random.choice(range(2**16))
-							if color != 0 and color not in masterColorList:
-								masterColorList.append(color)
-								break
-							if len(masterColorList) >= 2**16 - 1:
-								print 'ERROR: Too many objects for color range.'
-
-					print '\n'
-					print objectCount
-					end = timer()
-					print(end - start)
-					print '\n'
-					chainLengths.append((objectCount, color, processLength))
-					pickle.dump((process, color), open(write_pickles_to + str(objectCount) + '.p', 'wb'))
-
-
-		print 'Number of chains: ' + str(len(chainLengths))
-		print 'Average chain length: ' + str(float(sum([x[2] for x in chainLengths]))/len(chainLengths))
-		print '\nSummarizing...'
-		# print s
-
-		if os.path.exists('summary.txt'):
-			os.remove('summary.txt')
-
-		# Make sure this does what I expect it to:
-		chainLengths = sorted(chainLengths)[::-1]
-
-		with open('summary.txt','w') as f:
-			for i,each in enumerate(chainLengths):
-				f.write(str(chainLengths[i][0]) + ' ' + str(chainLengths[i][1]) + ' ' + str(chainLengths[i][2]) + '\n')
-
-
-	if build_resultStack:
-
-		picklePaths = sorted(glob.glob(write_pickles_to + '*.p'))
-
-		if load_stack_from_pickle_file:
-			resultArray, startO = pickle.load(open('resultArraySave.p', 'rb'))
-		else:
-			resultArray = np.zeros((shape[0], shape[1], len(list_of_image_paths)), np.uint16)
-			startO = 0
-
-
-		for o, path in enumerate(picklePaths):
-			if o < startO:
-				continue
-
-			startZ, process, color = pickle.load(open(path, 'rb'))
-
-			for z in xrange(resultArray.shape[2]):
-				img = resultArray[:,:,z]
-
-				if z < startZ:
-					continue
-
-				if z >= startZ + len(process):
-					continue
-
-				img[zip(*process[z - startZ])] = color
-
-			pickle.dump((resultArray, o), open('resultArraySave.p,','wb'))
-
-			print '\n'
-			print 'Built object ' + str(o+1) + '/' + str(len(picklePaths))
-			end = timer()
-			print(end - start)
-			print '\n'
-
-		for z in xrange(resultArray.shape[2]):
-			image = resultArray[:,:,z]
-			cv2.imwrite(write_images_to + list_of_image_paths[z][list_of_image_paths[z].index('/')+1:], image)
-
+	# Use the pickle files to build the result stack
+	if build_resultStack: buildResultStack(write_images_to, write_pickles_to, maskPaths, maskShape)
 
 if __name__ == "__main__":
 	main()
