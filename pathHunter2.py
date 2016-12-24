@@ -8,6 +8,7 @@ import sys
 from timeit import default_timer as timer
 import os
 from itertools import cycle
+from itertools import combinations
 from skimage.feature import peak_local_max
 from skimage.morphology import watershed
 from scipy import ndimage
@@ -21,6 +22,7 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from skimage import data
 from skimage.feature import match_template
+import math
 
 def findBBDimensions(listofpixels):
 	if len(listofpixels) == 0:
@@ -226,6 +228,111 @@ def upperLeftJustify(blob):
 
 	return transformedBlob
 
+def erodeAndSplit(blob, shape):
+	img = np.zeros(shape, np.uint8)
+	img[zip(*blob)] = 99999
+	contours = []
+	erodeCount = 0
+	kernel = np.ones((3,3),np.uint8)
+
+	while len(contours) < 2:
+
+		img = cv2.erode(img.copy(),kernel,iterations = 1)
+		erodeCount += 1
+
+		contours = cv2.findContours(img.copy(),cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)[1]
+
+		if erodeCount > 4:
+			return []
+
+	subBlobs = []
+	for cnt in contours:
+		mask = np.zeros(img.shape,np.uint8)
+		cv2.drawContours(mask,[cnt],0,255,-1)
+		pixelpoints = np.transpose(np.nonzero(mask))
+		b = [(x[0],x[1]) for x in pixelpoints]
+
+		im = np.zeros(shape,np.uint16)
+		im[zip(*b)] = 99999
+		for c in xrange(erodeCount):
+			im = cv2.dilate(im.copy(), kernel, iterations = 1)
+
+		subBlobs.append(zip(np.nonzero(im)[0], np.nonzero(im)[1]))
+
+	return subBlobs
+
+def getCandidates(regions, image):
+	blobs = []
+	shorthand = []
+	for each in regions:
+		shorthand.append(each)
+		q = np.where(image==each)
+		blobs.append(zip(q[0],q[1]))
+
+	blobparents = {}
+	blobchildren = []
+	for blob in blobs:
+		subBlobs = erodeAndSplit(blob, image.shape)
+		if len(subBlobs) > 0:
+			for sb in subBlobs:
+				blobparents[tuple(sb)] = blob
+		blobchildren.extend(subBlobs)
+
+	blobs.extend(blobchildren)
+	shorthand.extend(blobchildren)
+
+	combosIndices = combinations(range(len(blobs)),2)
+	scombosIndices = combinations(range(len(shorthand)),2)
+	combos = [[blobs[i[0]], blobs[i[1]]] for i in combosIndices]
+	scombos = [[shorthand[i[0]], shorthand[i[1]]] for i in scombosIndices]
+
+	indicesToRemove = []
+
+	# Rules:
+	# 1. no combo can include a parent and any of its children
+	# 2. no combo can include a whole set of siblings
+	for i, combo in enumerate(combos):
+		if tuple(combo[0]) in blobparents.keys():
+			if blobparents[tuple(combo[0])] == combo[1]:
+				indicesToRemove.append(i)
+		if tuple(combo[1]) in blobparents.keys():
+			if blobparents[tuple(combo[1])] == combo[0]:
+				indicesToRemove.append(i)
+		if tuple(combo[0]) in blobparents.keys() and tuple(combo[1]) in blobparents.keys():
+			if blobparents[tuple(combo[0])] == blobparents[tuple(combo[1])]:
+				indicesToRemove.append(i)
+
+	combos = [combo for i, combo in enumerate(combos) if i not in indicesToRemove]
+	scombos = [scombo for i, scombo in enumerate(scombos) if i not in indicesToRemove]
+
+	for combo in combos: blobs.append(combo[0] + combo[1])
+	shorthand.extend(scombos)
+
+	if len(shorthand) != len(blobs):
+		print 'Something went wrong, shorthand is different from blobs'
+		code.interact(local=locals())
+
+	return blobs, shorthand
+
+def calculateAffinity(currentBlob, candidateBlob, normalized_xcorrelation):
+	box1, dimensions1 = findBBDimensions(currentBlob)
+
+	# Need to account for the fact that each point on the xcorrelation represents the origin of the template
+	max_xcorrelation = np.max(normalized_xcorrelation[zip(*candidateBlob)])
+
+	distance_between_centers = distance(findCentroid(currentBlob), findCentroid(candidateBlob))
+	if dimensions1[0] >= dimensions1[1]:
+		diameter = dimensions1[0]
+	else:
+		diameter = dimensions1[1]
+	variance = diameter
+	displacement_penalty = math.exp(-(distance_between_centers**2)/variance)
+
+	affinity = -math.log10(max_xcorrelation * displacement_penalty)
+
+	return affinity
+
+
 # ████████ ██████   █████   ██████ ██   ██         ██████  ██████   ██████   ██████ ███████ ███████ ███████
 #    ██    ██   ██ ██   ██ ██      ██  ██          ██   ██ ██   ██ ██    ██ ██      ██      ██      ██
 #    ██    ██████  ███████ ██      █████           ██████  ██████  ██    ██ ██      █████   ███████ ███████
@@ -247,7 +354,6 @@ def trackProcess(color1, maskPaths, emPaths, z, shape):
 
 		box1, dimensions1 = findBBDimensions(currentBlob)
 		color1 = maskImage1[currentBlob[0]]
-		centroid1 = findCentroid(currentBlob)
 
 		if z + 1 < len(maskPaths):
 			maskImage2 = cv2.imread(maskPaths[z], -1)
@@ -257,9 +363,9 @@ def trackProcess(color1, maskPaths, emPaths, z, shape):
 			continue
 
 		emBlob = emImage1[box1[0]:box1[1],box1[2]:box1[3]]
-		result = match_template(emImage2, emBlob)
 
-		code.interact(local=locals())
+		# Take the normalized cross correlation of the cropped currentBlob against the EM of the next slice
+		normalized_xcorrelation = match_template(emImage2, emBlob)
 
 		window = maskImage2[box1[0]:box1[1], box1[2]:box1[3]]
 		organicWindow = maskImage2[zip(*currentBlob)]
@@ -276,15 +382,18 @@ def trackProcess(color1, maskPaths, emPaths, z, shape):
 
 		nonzero_regions = [f[0] for f in frequency if f[0] != 0]
 		# find all the candidate 2D regions and place in a list. Includes all sub-regions obtained through erosion and all combinations of regions
-		candidateBlobs, candidateShortHand = getCandidates(nonzero_regions)
+		candidateBlobs, candidateShorthand = getCandidates(nonzero_regions, maskImage2)
 
-		# collect affinity data for the candidate regions as a list of tuples, each tuple containing the following data: [0]: distance between centroids, [1]: normalized cross-correlation result
-		affinityData = []
-		for color2, freq in candidateRegions:
+		# calculate affinity data for the candidate regions using the formula in https://www.ncbi.nlm.nih.gov/pmc/articles/PMC2630194/
+		# the lower the value, the higher the affinity
+		# parameters: distance between centroids, local max of normalized cross correlation
+		affinityData = [calculateAffinity(currentBlob, candidate, normalized_xcorrelation) for candidate in candidateBlobs]
 
-			q = np.where(maskImage2 == color2)
-			nextBlob = zip(q[0],q[1])
-			box2, dimensions2 = findBBDimensions(nextBlob)
+		code.interact(local=locals())
+
+		q = np.where(maskImage2 == color2)
+		nextBlob = zip(q[0],q[1])
+		box2, dimensions2 = findBBDimensions(nextBlob)
 
 		blob1 = upperLeftJustify(currentBlob)
 		blob2 = upperLeftJustify(nextBlob)
@@ -361,15 +470,19 @@ def traceObjects(minimum_process_length, write_pickles_to, masterColorList, mask
 
 	# begin searching through slices
 	for z in xrange(len(maskPaths)):
-		###Testing###
-		if z != 0:
+		# ████████ ███████ ███████ ████████ ██ ███    ██  ██████
+		#    ██    ██      ██         ██    ██ ████   ██ ██
+		#    ██    █████   ███████    ██    ██ ██ ██  ██ ██   ███
+		#    ██    ██           ██    ██    ██ ██  ██ ██ ██    ██
+		#    ██    ███████ ███████    ██    ██ ██   ████  ██████
+		if z != 656:
 			continue
 		#############
 		# get the unique colors in that slice
 		image = cv2.imread(maskPaths[z], -1)
 		colorVals = [c for c in np.unique(image) if c!=0]
 		###Testing###
-		colorVals = [24509]
+		colorVals = [35529]
 		# 24661 @1: 24762, @9:26048, @214: 26501
 		# 22013 @62: 22568 @63: 21963 @67: 22517 @68: 22971, @73: 22946
 		# @258: 27384
@@ -504,3 +617,23 @@ def main():
 
 if __name__ == "__main__":
 	main()
+
+# ██     ██  ██████  ██████  ██   ██ ██ ███    ██  ██████      ██     ██ ██ ████████ ██   ██      ██████  ██████  ███    ██ ████████  ██████  ██    ██ ██████  ███████
+# ██     ██ ██    ██ ██   ██ ██  ██  ██ ████   ██ ██           ██     ██ ██    ██    ██   ██     ██      ██    ██ ████   ██    ██    ██    ██ ██    ██ ██   ██ ██
+# ██  █  ██ ██    ██ ██████  █████   ██ ██ ██  ██ ██   ███     ██  █  ██ ██    ██    ███████     ██      ██    ██ ██ ██  ██    ██    ██    ██ ██    ██ ██████  ███████
+# ██ ███ ██ ██    ██ ██   ██ ██  ██  ██ ██  ██ ██ ██    ██     ██ ███ ██ ██    ██    ██   ██     ██      ██    ██ ██  ██ ██    ██    ██    ██ ██    ██ ██   ██      ██
+#  ███ ███   ██████  ██   ██ ██   ██ ██ ██   ████  ██████       ███ ███  ██    ██    ██   ██      ██████  ██████  ██   ████    ██     ██████   ██████  ██   ██ ███████
+
+# img8 = (img16/256).astype('uint8')
+#
+# contours = cv2.findContours(img8.copy(),cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)[1]
+# blobs = []
+# for cnt in contours:
+# 	mask = np.zeros(img8.shape,np.uint8)
+# 	cv2.drawContours(mask,[cnt],0,255,-1)
+# 	pixelpoints = np.transpose(np.nonzero(mask))
+# 	blobs.append([(x[0],x[1]) for x in pixelpoints])
+
+# convert back to row, column and store as list of points
+# cnt = [(x[0][1], x[0][0]) for x in cnt]
+# newconts.append(cnt)
