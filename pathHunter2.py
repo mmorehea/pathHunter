@@ -53,25 +53,6 @@ def findCentroid(listofpixels):
 		# code.interact(local=locals())
 		centroid = (0,0)
 	return centroid
-def getMeasurements(blob, shape):
-	img = np.zeros(shape, np.uint16)
-	img[zip(*blob)] = 1
-	per = []
-	for p in blob:
-		x = p[0]
-		y = p[1]
-		q = [(x+1,y),(x-1,y),(x,y+1),(x,y-1)]
-
-		edgePoint = False
-		for each in q:
-			try:
-				if img[each] == 0:
-					edgePoint = True
-			except IndexError:
-				edgePoint = True
-		if edgePoint:
-			per.append(p)
-	return len(blob), len(per)
 def testOverlap(setofpixels1, setofpixels2):
 
 	set_intersection = setofpixels1 & setofpixels2
@@ -81,79 +62,6 @@ def testOverlap(setofpixels1, setofpixels2):
 	percent_overlap = float(len(set_intersection)) / len(set_union)
 
 	return percent_overlap
-def orderByPercentOverlap(blobs, reference):
-	overlapList = []
-	for blob in blobs:
-		overlapList.append((testOverlap(set(reference),set(blob)), blob))
-
-
-	overlapList = sorted(overlapList,key=lambda o: o[0])[::-1]
-	orderedBlobs = [l[1] for l in overlapList]
-	overlapVals = [l[0] for l in overlapList]
-
-	return orderedBlobs, overlapVals
-def waterShed(blob, shape):
-	img = np.zeros(shape, np.uint16)
-	img[zip(*blob)] = 99999
-
-	D = ndimage.distance_transform_edt(img)
-	mindist = 7
-	labels = [1,2,3,4]
-	while len(np.unique(labels)) > 3:
-		mindist += 1
-		localMax = peak_local_max(D, indices=False, min_distance=mindist, labels=img)
-
-		markers = ndimage.label(localMax, structure=np.ones((3,3)))[0]
-		labels = watershed(-D, markers, mask=img)
-
-	subBlobs = []
-	for label in np.unique(labels):
-		if label == 0:
-			continue
-		ww = np.where(labels==label)
-		bb = zip(ww[0], ww[1])
-		subBlobs.append(bb)
-	# code.interact(local=locals())
-	try:
-		return subBlobs, zip(np.where(localMax==True)[0],np.where(localMax==True)[1])[0]
-	except IndexError:
-		return subBlobs, 0
-def findNearest(img, startPoint):
-	directions = cycle([[0,1], [1,1], [1,0], [1,-1], [0,-1], [-1,-1], [-1,0], [-1,1]])
-	increment = 0
-	cycleCounter = 0
-	distance = [0,0]
-
-	if img[startPoint] > 0:
-		return startPoint
-
-	while True:
-		direction = directions.next()
-
-		for i in [0,1]:
-			if direction[i] > 0:
-				distance[i] = direction[i] + increment
-			elif direction[i] < 0:
-				distance[i] = direction[i] - increment
-			else:
-				distance[i] = direction[i]
-
-		checkPoint = (startPoint[0] + distance[0],startPoint[1] + distance[1])
-
-		cycleCounter += 1
-		if cycleCounter % 8 == 0:
-			increment += 1
-
-		# print cycleCounter
-
-		try:
-			if img[checkPoint] > 0:
-				break
-		except:
-			#code.interact(local=locals())
-			break
-
-	return checkPoint
 def distance(point1, point2):
 	return ((point2[0] - point1[0])**2 + (point2[1] - point1[1])**2)**0.5
 def transformBlob(blob, displacement):
@@ -166,55 +74,25 @@ def transformBlob(blob, displacement):
 
 	return transformedBlob
 def shapeMatch(blob1, blob2, shape):
+	box1, dimensions1 = findBBDimensions(blob1)
+	box2, dimensions2 = findBBDimensions(blob2)
+	if 0 in dimensions1 or 0 in dimensions2:
+		return sys.maxint
+
 	img1 = np.zeros(shape, np.uint8)
 	img2 = img1.copy()
 	img1[zip(*blob1)] = 99999
 	img2[zip(*blob2)] = 99999
-
-	im, contours, hierarchy = cv2.findContours(img1,cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)
-	cnt1 = contours[0]
-	im, contours, hierarchy = cv2.findContours(img2,cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)
-	cnt2 = contours[0]
+	try:
+		im, contours, hierarchy = cv2.findContours(img1,cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)
+		cnt1 = contours[0]
+		im, contours, hierarchy = cv2.findContours(img2,cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)
+		cnt2 = contours[0]
+	except:
+		return sys.maxint
 
 	match = cv2.matchShapes(cnt1, cnt2, 1, 0)
 	return match
-def resetStats(currentBlob, centroid1, blob2, freq, organicWindow, displacementBuffer):
-
-	centroid2 = findCentroid(blob2)
-	overlap = testOverlap(set(currentBlob), set(blob2))
-	coverage = freq / float(len(organicWindow))
-	freq2 = len(set(currentBlob) & set(blob2))
-	coverage2 = freq2 / float(len(blob2))
-
-	# dx = centroid2[0] - centroid1[0]
-	# dy = centroid2[1] - centroid1[1]
-	# displacementBuffer.append((dx,dy))
-	# if len(displacementBuffer) > 5:
-	# 	del displacementBuffer[0]
-	# #collect average displacement buffer
-	# dxs = [x[0] for x in displacementBuffer]
-	# dys = [x[1] for x in displacementBuffer]
-	# avgDisplacement_last5 = (float(sum(dxs))/5, float(sum(dys))/5)
-
-	return centroid2, overlap, coverage, freq2, coverage2, displacementBuffer
-def getCombos(l):
-	combos = []
-	for i, item in enumerate(list):
-		n = i
-		while n < len(l):
-			if i == n:
-				continue
-			combos.append(i, n)
-			n += 1
-	code.interact(local=locals())
-def upperLeftJustify(blob):
-	box, dimensions = findBBDimensions(blob)
-	transformedBlob = []
-	for point in blob:
-		transformedPoint = (point[0] - box[0], point[1] - box[2])
-		transformedBlob.append(transformedPoint)
-
-	return transformedBlob
 def blockOut(process,maskPaths):
 	for z in xrange(len(maskPaths)):
 		img = cv2.imread(maskPaths[z],-1)
@@ -228,7 +106,27 @@ def blockOut(process,maskPaths):
 					img[zip(*each)] = 0
 			cv2.imwrite(maskPaths[z],img)
 	return
+def verifyShorthand(nextBlob, nextBlobShorthand, maskImage2):
+	testBlob = []
+	for each in nextBlobShorthand:
+		if each == None:
+			continue
+		if str(each).isdigit():
+			a = np.where(maskImage2==each)
+			testBlob.extend(zip(a[0],a[1]))
+		else:
+			testBlob.extend(each)
+	return nextBlob == testBlob
+def dilated(blob, shape, iterations):
+	img = np.zeros(shape,np.uint16)
+	img[zip(*blob)] = 99999
+	kernel = np.ones((3,3),np.uint8)
+	img = cv2.dilate(img.copy(), kernel, iterations=iterations)
+	nonz = np.nonzero(img)
+	dilatedBlob = zip(nonz[0],nonz[1])
 
+
+	return dilatedBlob
 def erodeAndSplit(blob, shape, currentBlob, z):
 	box1, dimensions1 = findBBDimensions(currentBlob)
 	centroid1 = findCentroid(currentBlob)
@@ -257,17 +155,6 @@ def erodeAndSplit(blob, shape, currentBlob, z):
 					indices_too_far_away.append(i)
 			except ZeroDivisionError:
 				indices_too_far_away.append(i)
-			# if z == 107:
-			# 	mask = np.zeros(img.shape,np.uint8)
-			# 	cv2.drawContours(mask,[each],0,255,-1)
-			# 	pixelpoints = np.transpose(np.nonzero(mask))
-			# 	b = [(x[0],x[1]) for x in pixelpoints]
-			# 	a=np.zeros(shape,np.uint16)
-			# 	a[zip(*b)]=99999
-			# 	cv2.imshow('a',a)
-			# 	cv2.waitKey()
-			# 	print distance(centroid1, contcenter)
-			# 	code.interact(local=locals())
 
 		contours = [cnt for n, cnt in enumerate(contours) if n not in indices_too_far_away]
 
@@ -275,7 +162,7 @@ def erodeAndSplit(blob, shape, currentBlob, z):
 			M = cv2.moments(contours[0])
 			try:
 				contcenter = (int(M['m01']/M['m00']), int(M['m10']/M['m00']))
-				if distance(centroid1, contcenter) < 0.25 * splitRange:
+				if distance(centroid1, contcenter) < 0.2 * splitRange:
 					break
 			except ZeroDivisionError:
 				pass
@@ -300,7 +187,6 @@ def erodeAndSplit(blob, shape, currentBlob, z):
 		subBlobs.append(sb)
 
 	return subBlobs
-
 def getCandidates(regions, image, currentBlob, z):
 	blobs = []
 	shorthand = []
@@ -351,38 +237,59 @@ def getCandidates(regions, image, currentBlob, z):
 		print 'Something went wrong, shorthand is different from blobs'
 		code.interact(local=locals())
 
-	# a = np.zeros(image.shape, np.uint16)
-	# q = a.copy()
-
 	return blobs, shorthand
+def calculateAffinity(currentBlob, candidateBlob, emImage1, emImage2, z):
 
-def calculateAffinity(currentBlob, candidateBlob, normalized_xcorrelation):
 	box1, dimensions1 = findBBDimensions(currentBlob)
+	emBlob = np.zeros(emImage1.shape, np.uint8)
+	emBlob[zip(*currentBlob)] = emImage1[zip(*currentBlob)]
+	for i, each in enumerate(box1):
+		if i % 2 == 0:
+			if each == 0:
+				box1[i] += 1
+		elif i == 1:
+			if each == emImage1.shape[0]:
+				box1[i] -= 1
+		elif i == 3:
+			if each == emImage1.shape[1]:
+				box1[i] -= 1
 
-	# Need to account for the fact that each point on the xcorrelation represents the origin of the template
-	max_xcorrelation = np.max(normalized_xcorrelation[zip(*candidateBlob)])
+	emBlob = emBlob[box1[0]-1:box1[1]+1,box1[2]-1:box1[3]+1]
+
+	box2, dimensions2 = findBBDimensions(candidateBlob)
+	if emBlob.size < dimensions2[0] * dimensions2[1]:
+		emBlob = cv2.resize(emBlob, (dimensions2[1],dimensions2[0]))
+
+	image2 = np.zeros(emImage2.shape,np.uint8)
+	image2[zip(*candidateBlob)] = emImage2[zip(*candidateBlob)]
+
+	normalized_xcorrelation = match_template(image2, emBlob)
+
+	try:
+		max_xcorrelation = np.max(normalized_xcorrelation)
+	except:
+		affinity = sys.maxint
+
 
 	distance_between_centers = distance(findCentroid(currentBlob), findCentroid(candidateBlob))
-	if dimensions1[0] >= dimensions1[1]:
-		diameter = dimensions1[0]
-	else:
-		diameter = dimensions1[1]
+	diameter = np.max(dimensions1)
 	variance = diameter
 	displacement_penalty = math.exp(-(distance_between_centers**2)/variance)
 
 	if max_xcorrelation <= 0.00000000001 or displacement_penalty <= 0.00000000001:
 		affinity = sys.maxint
 	else:
-		affinity = -math.log10(max_xcorrelation * displacement_penalty)
+		try:
+			affinity = -math.log10(max_xcorrelation * displacement_penalty)
+		except: affinity = sys.maxint
+
+	# cv2.imshow('e',emBlob)
+	# cv2.imshow('2',image2)
+	# print max_xcorrelation
+	# print affinity
+	# cv2.waitKey()
 
 	return affinity
-
-
-# ████████ ██████   █████   ██████ ██   ██         ██████  ██████   ██████   ██████ ███████ ███████ ███████
-#    ██    ██   ██ ██   ██ ██      ██  ██          ██   ██ ██   ██ ██    ██ ██      ██      ██      ██
-#    ██    ██████  ███████ ██      █████           ██████  ██████  ██    ██ ██      █████   ███████ ███████
-#    ██    ██   ██ ██   ██ ██      ██  ██          ██      ██   ██ ██    ██ ██      ██           ██      ██
-#    ██    ██   ██ ██   ██  ██████ ██   ██ ███████ ██      ██   ██  ██████   ██████ ███████ ███████ ███████
 def trackProcess(color1, maskPaths, emPaths, z, shape):
 	#Initialize chain
 	process = {}
@@ -390,6 +297,7 @@ def trackProcess(color1, maskPaths, emPaths, z, shape):
 	maskImage1 = cv2.imread(maskPaths[z], -1)
 	emImage1 = cv2.imread(emPaths[z], -1)
 	currentBlob = zip(np.where(maskImage1 == color1)[0],np.where(maskImage1 == color1)[1])
+	skipcount = 0
 	d = 0
 	z += 1
 
@@ -405,6 +313,12 @@ def trackProcess(color1, maskPaths, emPaths, z, shape):
 			terminate = True
 			continue
 
+		# If you have had to skip more than 60 slices, terminate
+		if skipcount > 60:
+			terminate = True
+			continue
+
+		# When you have reached the end of the stack, terminate
 		if z + 1 < len(maskPaths):
 			maskImage2 = cv2.imread(maskPaths[z], -1)
 			emImage2 = cv2.imread(emPaths[z], -1)
@@ -412,21 +326,12 @@ def trackProcess(color1, maskPaths, emPaths, z, shape):
 			terminate = True
 			continue
 
-		emBlob = emImage1[box1[0]:box1[1],box1[2]:box1[3]]
-
-		# Take the normalized cross correlation of the cropped currentBlob against the EM of the next slice
-		normalized_xcorrelation = match_template(emImage2, emBlob)
-
-		# Pad edges with 0 to avoid index errors
-		normalized_xcorrelation = np.pad(normalized_xcorrelation, ((0,emBlob.shape[0]),(0,emBlob.shape[1])),'constant',constant_values=0)
-
-		window = maskImage2[box1[0]:box1[1], box1[2]:box1[3]]
 		organicWindow = maskImage2[zip(*currentBlob)]
 		frequency = collections.Counter(organicWindow).most_common()
 
-		#check for blackness
+		# Check for blackness. If you find mostly nothing 12 slices in a row, terminate
 		if frequency[0][0] == 0 and len(frequency) == 1:
-			if d > 5:
+			if d > 12:
 				terminate = True
 				continue
 			else:
@@ -434,74 +339,58 @@ def trackProcess(color1, maskPaths, emPaths, z, shape):
 				z += 1
 				continue
 
+		# Find all regions overlapping the current blob by more than 15 %
 		nonzero_regions = [f[0] for f in frequency if f[0] != 0 and float(f[1])/len(currentBlob) > 0.15]
+
 		# find all the candidate 2D regions and place in a list. Includes all sub-regions obtained through erosion and all combinations of regions
 		candidateBlobs, candidateShorthand = getCandidates(nonzero_regions, maskImage2, currentBlob, z)
+
+		if len(candidateBlobs) > 10:
+			skipcount += 1
+			z += 1
+			continue
 
 		# calculate affinity data for the candidate regions using the formula in https://www.ncbi.nlm.nih.gov/pmc/articles/PMC2630194/
 		# the lower the value, the higher the affinity
 		# parameters: distance between centroids, local max of normalized cross correlation
-		affinityData = [calculateAffinity(currentBlob, candidate, normalized_xcorrelation) for candidate in candidateBlobs]
+		affinityData = [calculateAffinity(dilated(currentBlob,shape,2), dilated(candidate,shape,2), emImage1, emImage2, z) for candidate in candidateBlobs]
 
-		print '\t'+str(affinityData)
-
-		if np.min(affinityData) < 100:
-			i = np.where(affinityData==np.min(affinityData))[0][0]
-			nextBlob = candidateBlobs[i]
-			nextBlobShorthand = candidateShorthand[i]
-		else:
+		if len(affinityData) == 0:
+			skipcount += 1
 			z += 1
 			continue
 
-		testBlob = []
-		for each in nextBlobShorthand:
-			if each == None:
-				continue
-			if str(each).isdigit():
-				a = np.where(maskImage2==each)
-				testBlob.extend(zip(a[0],a[1]))
-			else:
-				testBlob.extend(each)
+		if np.min(affinityData) > 100:
+			skipcount += 1
+			z += 1
+			continue
 
-		if nextBlob != testBlob:
+		i = np.where(affinityData==np.min(affinityData))[0][0]
+		nextBlob = candidateBlobs[i]
+		nextBlobShorthand = candidateShorthand[i]
+
+		if verifyShorthand(nextBlob, nextBlobShorthand, maskImage2) == False
 			print 'ERROR: nextBlob and nextBlobShorthand do not match.'
 			code.interact(local=locals())
 
-		# Block out the current blob in the mask image stack
-		# maskImage1[zip(*currentBlob)] = 0
-		# cv2.imwrite(maskPaths[z-1], maskImage1)
+		freq2 = len(set(currentBlob) & set(nextBlob))
+		coverage2 = freq2 / float(len(nextBlob))
 
-		# Add foundList to the process
+		# If the shape changes dramatically, terminate
+		if coverage2 < 0.7 and shapeMatch(currentBlob,nextBlob,shape) > 0.35:
+			skipcount += 1
+			z += 1
+			continue
+
+		# Add shorthand for the next blob to the process
 		process[z] = nextBlobShorthand
-
-		# for each in candidateBlobs:
-		# 	a=np.zeros(shape,np.uint16)
-		# 	a[zip(*each)] = 99999
-		# 	cv2.imshow('a',a)
-		# 	cv2.waitKey()
-		# code.interact(local=locals())
-		# if z >= 215:
-		# 	img = np.zeros(shape,np.uint16)
-		# 	img[zip(*currentBlob)] = 99999
-		# 	cv2.imshow('a',img)
-		# 	cv2.waitKey()
-		# 	print nextBlobShorthand
-		# 	img = np.zeros(shape,np.uint16)
-		# 	img[zip(*nextBlob)] = 99999
-		# 	cv2.imshow('a',img)
-		# 	cv2.waitKey()
-		# 	for each in candidateBlobs:
-		# 		img = np.zeros(shape,np.uint16)
-		# 		img[zip(*each)] = 99999
-		# 		cv2.imshow('a',img)
-		# 		cv2.waitKey()
-		# 	code.interact(local=locals())
-
 
 		# If not terminating, reset variables and increment z
 		if terminate == False:
-			currentBlob = nextBlob
+			d = 0
+			skipcount = 0
 
+			currentBlob = nextBlob
 			maskImage1 = maskImage2
 			emImage1 = emImage2
 
@@ -511,12 +400,6 @@ def trackProcess(color1, maskPaths, emPaths, z, shape):
 	blockOut(process, maskPaths)
 
 	return process
-
-# ████████ ██████   █████   ██████ ███████          ██████  ██████       ██ ███████  ██████ ████████ ███████
-#    ██    ██   ██ ██   ██ ██      ██              ██    ██ ██   ██      ██ ██      ██         ██    ██
-#    ██    ██████  ███████ ██      █████           ██    ██ ██████       ██ █████   ██         ██    ███████
-#    ██    ██   ██ ██   ██ ██      ██              ██    ██ ██   ██ ██   ██ ██      ██         ██         ██
-#    ██    ██   ██ ██   ██  ██████ ███████ ███████  ██████  ██████   █████  ███████  ██████    ██    ███████
 def traceObjects(start, minimum_process_length, write_pickles_to, masterColorList, maskPaths, emPaths, maskShape, emShape):
 	# general setup
 	chainLengths = []
@@ -524,25 +407,33 @@ def traceObjects(start, minimum_process_length, write_pickles_to, masterColorLis
 
 	# begin searching through slices
 	for z in xrange(len(maskPaths)):
-		# ████████ ███████ ███████ ████████ ██ ███    ██  ██████
-		#    ██    ██      ██         ██    ██ ████   ██ ██
-		#    ██    █████   ███████    ██    ██ ██ ██  ██ ██   ███
-		#    ██    ██           ██    ██    ██ ██  ██ ██ ██    ██
-		#    ██    ███████ ███████    ██    ██ ██   ████  ██████
+		###TESTING###
 		if z != 0:
 			continue
 		#############
-		# get the unique colors in that slice
+
+		# get the unique colors in that slice, order by size of blob
 		image = cv2.imread(maskPaths[z], -1)
 		colorVals = [c for c in np.unique(image) if c!=0]
+		blobs = []
+		c = {}
+		for color in colorVals:
+			wblob = np.where(image==color)
+			blob = zip(wblob[0], wblob[1])
+			blobs.append(blob)
+			c[tuple(blob)] = color
+		blobs = sorted(blobs, key=len)
+		colorVals = [c[tuple(blob)] for blob in blobs]
 		###Testing###
 		# colorVals = [22013, 22669, 23375, 23728, 21131, 21055, 20601, 19945, 23148, 23173, 23703, 23854, 24509, 24434, 24484, 24938, 25342, 25039, 25770]
-		colorVals = [19063]
+		# Very tricky: 21559
+		# colorVals = set([22013, 22669, 23375, 23728, 21131, 21055, 20601, 19945, 23148, 23173, 23703, 23854, 24509, 24434, 24484, 24938, 25342, 25039, 25770, 21761])
+		colorVals = [22013, 25140, 24081, 23324, 19063]
 		#############
 
 		# with all colors, begin tracing objects one by one
 		for i, startColor in enumerate(colorVals):
-			# process is a dictionary representing a 3D process, where each key is a z index, and each value is a list of 2D regions
+			# process is a dictionary representing a 3D process, where each key is a z index, and each value is a tuple of 2D regions
 			process = trackProcess(startColor, maskPaths, emPaths, z, emShape)
 
 			processLength = np.max(np.array(process.keys())) - np.min(np.array(process.keys()))
@@ -569,8 +460,9 @@ def traceObjects(start, minimum_process_length, write_pickles_to, masterColorLis
 				print '\n'
 				chainLengths.append((objectCount, color, processLength))
 				pickle.dump((process, color), open(write_pickles_to + str(objectCount) + '.p', 'wb'))
-
-
+				pickle.dump(chainLengths, open('chainLengths.p','wb'))
+def summarize():
+	chainLengths = pickle.load(open('chainLengths.p','rb'))
 	print 'Number of chains: ' + str(len(chainLengths))
 	print 'Average chain length: ' + str(float(sum([x[2] for x in chainLengths]))/len(chainLengths))
 	print '\nSummarizing...'
@@ -586,20 +478,15 @@ def traceObjects(start, minimum_process_length, write_pickles_to, masterColorLis
 	with open('summary.txt','w') as f:
 		for i,each in enumerate(chainLengths):
 			f.write(str(chainLengths[i][0]) + ' ' + str(chainLengths[i][1]) + ' ' + str(chainLengths[i][2]) + '\n')
-
-# ██████  ██    ██ ██ ██      ██████          ██████  ███████ ███████ ██    ██ ██   ████████      ███████ ████████  █████   ██████ ██   ██
-# ██   ██ ██    ██ ██ ██      ██   ██         ██   ██ ██      ██      ██    ██ ██      ██         ██         ██    ██   ██ ██      ██  ██
-# ██████  ██    ██ ██ ██      ██   ██         ██████  █████   ███████ ██    ██ ██      ██         ███████    ██    ███████ ██      █████
-# ██   ██ ██    ██ ██ ██      ██   ██         ██   ██ ██           ██ ██    ██ ██      ██              ██    ██    ██   ██ ██      ██  ██
-# ██████   ██████  ██ ███████ ██████  ███████ ██   ██ ███████ ███████  ██████  ███████ ██ ███████ ███████    ██    ██   ██  ██████ ██   ██
 def buildResultStack(start, write_images_to, write_pickles_to, originalMaskPaths, maskShape):
 	picklePaths = sorted(glob.glob(write_pickles_to + '*.p'))
+
+	pickles = [pickle.load(open(path,'rb')) for path in picklePaths]
 
 	for z in xrange(len(originalMaskPaths)):
 		resultImg = np.zeros(maskShape, np.uint16)
 
-		for path in picklePaths:
-			process, color = pickle.load(open(path, 'rb'))
+		for process, color in pickles:
 			if z in process.keys():
 				for each in process[z]:
 					if each == None:
@@ -615,7 +502,6 @@ def buildResultStack(start, write_images_to, write_pickles_to, originalMaskPaths
 		end = timer()
 		print(end - start)
 		print '\n'
-
 # ███    ███  █████  ██ ███    ██
 # ████  ████ ██   ██ ██ ████   ██
 # ██ ████ ██ ███████ ██ ██ ██  ██
@@ -624,32 +510,26 @@ def buildResultStack(start, write_images_to, write_pickles_to, originalMaskPaths
 def main():
 	################################################################################
 	# SETTINGS
-	minimum_process_length = 0
-	write_images_to = 'littleresult/'
-	write_pickles_to = 'picklecrop/object'
+	minimum_process_length = 100
+	write_images_to = 'littleresult3/'
+	write_pickles_to = 'pickles/object'
 	trace_objects = True
+	summarize = True
 	build_resultStack = True
-	load_stack_from_pickle_file = False
 	################################################################################
 	# Profiling:
 	# python -m cProfile -o output pathHunter.py littlecrop/
 	# python runsnake.py output
 
 	# ISSUES:
-	# 1. Why are there so many duplicates in affinityData?
-	# 2. Need to account for the fact that each point in normalized_xcorrelation represents the origin of the template. Currently padded with 0s
-	# 3. Maybe sort blobs by length and/or get rid of the cell bodies
-	# 4. Bits and pieces of blobs left behind by trackprocess are going to be picked up as startblobs. Probably not a big deal as these will likely just become length 1 chains.
-	# 5. A lot of the colors in the result stack are just white. Not ideal
-	# 6. Compute normalized xcorrelation in the fourier domain to increase speed
+	# 1. Normalized xcorrelation in the fourier domain
+	# 2. Detect bad startblobs
 
 	# Get list of colors to use in the result stack
 	masterColorList = pickle.load(open('masterColorList.p','rb'))
 
 	originalMaskFolderPath = sys.argv[1]
 	emFolderPath = sys.argv[2]
-
-	# Collect tiffs
 	originalMaskPaths =  sorted(glob.glob(originalMaskFolderPath +'*'))
 	emPaths = sorted(glob.glob(emFolderPath +'*'))
 
@@ -674,28 +554,11 @@ def main():
 	# Trace each process in the input stack and save as pickle file
 	if trace_objects: traceObjects(startTime, minimum_process_length, write_pickles_to, masterColorList, maskPaths, emPaths, maskShape, emShape)
 
+	# Summarize the chains in the result stack, their lengths and colors
+	if summarize: summarize()
+
 	# Use the pickle files to build the result stack
 	if build_resultStack: buildResultStack(startTime, write_images_to, write_pickles_to, originalMaskPaths, maskShape)
 
 if __name__ == "__main__":
 	main()
-
-# ██     ██  ██████  ██████  ██   ██ ██ ███    ██  ██████      ██     ██ ██ ████████ ██   ██      ██████  ██████  ███    ██ ████████  ██████  ██    ██ ██████  ███████
-# ██     ██ ██    ██ ██   ██ ██  ██  ██ ████   ██ ██           ██     ██ ██    ██    ██   ██     ██      ██    ██ ████   ██    ██    ██    ██ ██    ██ ██   ██ ██
-# ██  █  ██ ██    ██ ██████  █████   ██ ██ ██  ██ ██   ███     ██  █  ██ ██    ██    ███████     ██      ██    ██ ██ ██  ██    ██    ██    ██ ██    ██ ██████  ███████
-# ██ ███ ██ ██    ██ ██   ██ ██  ██  ██ ██  ██ ██ ██    ██     ██ ███ ██ ██    ██    ██   ██     ██      ██    ██ ██  ██ ██    ██    ██    ██ ██    ██ ██   ██      ██
-#  ███ ███   ██████  ██   ██ ██   ██ ██ ██   ████  ██████       ███ ███  ██    ██    ██   ██      ██████  ██████  ██   ████    ██     ██████   ██████  ██   ██ ███████
-
-# img8 = (img16/256).astype('uint8')
-#
-# contours = cv2.findContours(img8.copy(),cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)[1]
-# blobs = []
-# for cnt in contours:
-# 	mask = np.zeros(img8.shape,np.uint8)
-# 	cv2.drawContours(mask,[cnt],0,255,-1)
-# 	pixelpoints = np.transpose(np.nonzero(mask))
-# 	blobs.append([(x[0],x[1]) for x in pixelpoints])
-
-# convert back to row, column and store as list of points
-# cnt = [(x[0][1], x[0][0]) for x in cnt]
-# newconts.append(cnt)
