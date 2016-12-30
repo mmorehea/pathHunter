@@ -353,21 +353,7 @@ def trackProcess(color1, maskImages, emImages, z, shape):
 
 		freq2 = len(set(currentBlob) & set(nextBlob))
 		coverage2 = freq2 / float(len(nextBlob))
-		if z >= 342:
-			a= np.zeros(shape,np.uint16)
-			a[zip(*currentBlob)] = 99999
-			cv2.imshow('a',a)
-			cv2.waitKey()
-			b= np.zeros(shape,np.uint16)
-			b[zip(*nextBlob)] = 99999
-			cv2.imshow('b',b)
-			cv2.waitKey()
-			for each in candidateBlobs:
-				c= np.zeros(shape,np.uint16)
-				c[zip(*nextBlob)] = 99999
-				cv2.imshow('c',c)
-				cv2.waitKey()
-			code.interact(local=locals())
+
 		# If the shape changes dramatically, terminate
 		if coverage2 < 0.7 and shapeMatch(currentBlob,nextBlob,shape) > 0.35:
 			skipcount += 1
@@ -397,8 +383,8 @@ def traceObjects(start, minimum_process_length, write_pickles_to, masterColorLis
 	chainLengths = []
 	objectCount = -1
 
-	# begin searching through slices
-	for z in xrange(len(maskImages)):
+	# Search through slices to get all chains that start more than 500 slices above the end of the stack
+	for z in xrange(len(maskImages[:-500])):
 		###TESTING###
 		if z != 0:
 			continue
@@ -418,8 +404,7 @@ def traceObjects(start, minimum_process_length, write_pickles_to, masterColorLis
 		colorVals = [c[tuple(blob)] for blob in blobs]
 		###Testing###
 		# Very tricky: 21559
-		# colorVals = [22013, 25140, 24081, 23324, 19063]
-		colorVals = [24081]
+		colorVals = [22013, 25140, 24081, 23324, 19063]
 		#############
 
 		# with all colors, begin tracing objects one by one
@@ -446,6 +431,7 @@ def traceObjects(start, minimum_process_length, write_pickles_to, masterColorLis
 
 				print '\n'
 				print objectCount
+				print 'Started at z=' + str(z)
 				end = timer()
 				print(end - start)
 				print '\n'
@@ -502,7 +488,7 @@ def buildResultStack(start, write_images_to, write_pickles_to, maskPaths, maskSh
 def main():
 	################################################################################
 	# SETTINGS
-	minimum_process_length = 100
+	minimum_process_length = 100 # Be careful not to set this too high because there may be small chains that can be merged manually with larger chains to complete them
 	write_images_to = 'littleresult/'
 	write_pickles_to = 'picklecrop/object'
 	trace_objects = True
@@ -512,11 +498,6 @@ def main():
 	# Profiling:
 	# python -m cProfile -o output pathHunter.py littlecrop/
 	# python runsnake.py output
-
-	# ISSUES
-	# Detect bad startblobs
-	# what happens to startblob = 24081 at slice 342
-	# When the startblob loop gets within a few hundred slices of the end it should stop
 
 	# Get list of colors to use in the result stack
 	masterColorList = pickle.load(open('masterColorList.p','rb'))
