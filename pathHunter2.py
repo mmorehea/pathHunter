@@ -125,7 +125,7 @@ def erodeAndSplit(blob, shape, currentBlob, z):
 		img = cv2.erode(img,kernel,iterations = 1)
 		erodeCount += 1
 
-		contours = cv2.findContours(img,cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)[1]
+		contours = cv2.findContours(img.copy(),cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)[1]
 		if len(contours) > 1: haveSplit = True
 
 		indices_too_far_away = []
@@ -382,23 +382,27 @@ def filterStartBlobs(blobs):
 	shape = (1255, 1354)
 	removeIndices = []
 	contours = []
-	for i, blob in enumerate(blobs):
-		img = np.zeros(shape,np.uint8)
-		img[zip(*blob)] = 99999
-		contours = cv2.findContours(img,cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)[1]
-		if len(contours) != 1:
-			print 'len(contours) is not 1'
-			code.interact(local=locals())
-		cv2.imshow('i',img)
-		cnt = contours[0]
-		area = cv2.contourArea(cnt)
-		hull = cv2.convexHull(cnt)
-		hull_area = cv2.contourArea(hull)
-		solidity = float(area)/hull_area
-		print len(blob)
-		print solidity
-		cv2.waitKey()
-	code.interact(local=locals())
+	# for i, blob in enumerate(blobs):
+	# 	if len(blob) < 100:
+	# 		continue
+	# 	img = np.zeros(shape,np.uint8)
+	# 	img[zip(*blob)] = 99999
+	# 	cv2.imshow('a',img)
+	# 	cv2.waitKey()
+	# 	contours = cv2.findContours(img,cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)[1]
+	# 	if len(contours) != 1:
+	# 		print 'len(contours) is not 1'
+	# 		code.interact(local=locals())
+	# 	cv2.imshow('i',img)
+	# 	cnt = contours[0]
+	# 	area = cv2.contourArea(cnt)
+	# 	hull = cv2.convexHull(cnt)
+	# 	hull_area = cv2.contourArea(hull)
+	# 	solidity = float(area)/hull_area
+	# 	print len(blob)
+	# 	print solidity
+	# 	cv2.waitKey()
+	# code.interact(local=locals())
 
 	filterdBlobs = [blob for i, blob in enumerate(blobs) if i not in removeIndices]
 	return filterdBlobs
@@ -427,7 +431,7 @@ def traceObjects(start, minimum_process_length, write_pickles_to, masterColorLis
 		blobs = filterStartBlobs(sorted(blobs, key=len))
 		colorVals = [c[tuple(blob)] for blob in blobs]
 		###Testing###
-		# colorVals = [22013, 25140, 24081, 23324, 19063]
+		colorVals = [22013, 25140, 24081, 23324, 19063]
 		#############
 
 		# with all colors, begin tracing objects one by one
