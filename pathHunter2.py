@@ -125,7 +125,10 @@ def erodeAndSplit(blob, shape, currentBlob, z):
 		img = cv2.erode(img,kernel,iterations = 1)
 		erodeCount += 1
 
-		contours = cv2.findContours(img.copy(),cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)[1]
+		contours, hierarchy = cv2.findContours(img.copy(),cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)[1:]
+		try:
+			contours = [contours[i] for i, each in enumerate(hierarchy[0]) if each[3] == -1]
+		except: pass
 		if len(contours) > 1: haveSplit = True
 
 		indices_too_far_away = []
@@ -378,31 +381,24 @@ def trackProcess(color1, maskImages, emImages, z, shape):
 
 	maskImage1[zip(*currentBlob)] = 0
 	return process, maskImages
-def filterStartBlobs(blobs):
-	shape = (1255, 1354)
+def filterStartBlobs(blobs, shape):
 	removeIndices = []
 	contours = []
-	# for i, blob in enumerate(blobs):
-	# 	if len(blob) < 100:
-	# 		continue
-	# 	img = np.zeros(shape,np.uint8)
-	# 	img[zip(*blob)] = 99999
-	# 	cv2.imshow('a',img)
-	# 	cv2.waitKey()
-	# 	contours = cv2.findContours(img,cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)[1]
-	# 	if len(contours) != 1:
-	# 		print 'len(contours) is not 1'
-	# 		code.interact(local=locals())
-	# 	cv2.imshow('i',img)
-	# 	cnt = contours[0]
-	# 	area = cv2.contourArea(cnt)
-	# 	hull = cv2.convexHull(cnt)
-	# 	hull_area = cv2.contourArea(hull)
-	# 	solidity = float(area)/hull_area
-	# 	print len(blob)
-	# 	print solidity
-	# 	cv2.waitKey()
-	# code.interact(local=locals())
+	for i, blob in enumerate(blobs):
+		try:
+			img = np.zeros(shape,np.uint8)
+			img[zip(*blob)] = 99999
+			contours, hierarchy = cv2.findContours(img.copy(),cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)[1:]
+			contours = [contours[i] for i, each in enumerate(hierarchy[0]) if each[3] == -1]
+			cnt = contours[0]
+			area = cv2.contourArea(cnt)
+			hull = cv2.convexHull(cnt)
+			hull_area = cv2.contourArea(hull)
+			solidity = float(area)/hull_area
+			if len(contours) != 1 or len(blob) < 20 or len(blob) > 4000 or solidity < 0.55:
+				removeIndices.append(i)
+		except:
+			removeIndices.append(i)
 
 	filterdBlobs = [blob for i, blob in enumerate(blobs) if i not in removeIndices]
 	return filterdBlobs
@@ -411,7 +407,7 @@ def traceObjects(start, minimum_process_length, write_pickles_to, masterColorLis
 	chainLengths = []
 	objectCount = -1
 
-	# Search through slices to get all chains that start more than 500 slices above the end of the stack
+	# Search through slices to get all chains that start more than 500 slices before the end of the stack
 	for z in xrange(len(maskImages[:-500])):
 		###TESTING###
 		if z != 0:
@@ -428,7 +424,7 @@ def traceObjects(start, minimum_process_length, write_pickles_to, masterColorLis
 			blob = zip(wblob[0], wblob[1])
 			blobs.append(blob)
 			c[tuple(blob)] = color
-		blobs = filterStartBlobs(sorted(blobs, key=len))
+		blobs = filterStartBlobs(sorted(blobs, key=len), emShape)
 		colorVals = [c[tuple(blob)] for blob in blobs]
 		###Testing###
 		colorVals = [22013, 25140, 24081, 23324, 19063]
@@ -516,8 +512,8 @@ def main():
 	################################################################################
 	# SETTINGS
 	minimum_process_length = 100 # Be careful not to set this too high because there may be small chains that can be merged manually with larger chains to complete them
-	write_images_to = 'littleresult/'
-	write_pickles_to = 'picklecrop/object'
+	write_images_to = 'result/'
+	write_pickles_to = 'pickles/object'
 	trace_objects = True
 	summarize_chains = True
 	build_resultStack = True
