@@ -378,6 +378,30 @@ def trackProcess(color1, maskImages, emImages, z, shape):
 
 	maskImage1[zip(*currentBlob)] = 0
 	return process, maskImages
+def filterStartBlobs(blobs):
+	shape = (1255, 1354)
+	removeIndices = []
+	contours = []
+	for i, blob in enumerate(blobs):
+		img = np.zeros(shape,np.uint8)
+		img[zip(*blob)] = 99999
+		contours = cv2.findContours(img,cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)[1]
+		if len(contours) != 1:
+			print 'len(contours) is not 1'
+			code.interact(local=locals())
+		cv2.imshow('i',img)
+		cnt = contours[0]
+		area = cv2.contourArea(cnt)
+		hull = cv2.convexHull(cnt)
+		hull_area = cv2.contourArea(hull)
+		solidity = float(area)/hull_area
+		print len(blob)
+		print solidity
+		cv2.waitKey()
+	code.interact(local=locals())
+
+	filterdBlobs = [blob for i, blob in enumerate(blobs) if i not in removeIndices]
+	return filterdBlobs
 def traceObjects(start, minimum_process_length, write_pickles_to, masterColorList, maskImages, emImages, maskShape, emShape):
 	# general setup
 	chainLengths = []
@@ -400,11 +424,10 @@ def traceObjects(start, minimum_process_length, write_pickles_to, masterColorLis
 			blob = zip(wblob[0], wblob[1])
 			blobs.append(blob)
 			c[tuple(blob)] = color
-		blobs = sorted(blobs, key=len)
+		blobs = filterStartBlobs(sorted(blobs, key=len))
 		colorVals = [c[tuple(blob)] for blob in blobs]
 		###Testing###
-		# Very tricky: 21559
-		colorVals = [22013, 25140, 24081, 23324, 19063]
+		# colorVals = [22013, 25140, 24081, 23324, 19063]
 		#############
 
 		# with all colors, begin tracing objects one by one
