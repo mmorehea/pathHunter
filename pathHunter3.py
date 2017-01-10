@@ -311,10 +311,10 @@ def trackProcess(color1, currentBlob, maskImages, emImages, z, shape):
 
 	terminate = False
 	while terminate == False:
-		if z % 50 == 0 or z == len(maskImages) - 1:
-			print '\t' + str(z)
-			print '\t\t' + str(timer() - a)
-			a = timer()
+		# if z % 50 == 0 or z == len(maskImages) - 1:
+		# 	print '\t' + str(z)
+		# 	print '\t\t' + str(timer() - a)
+		# 	a = timer()
 
 		box1, dimensions1 = findBBDimensions(currentBlob)
 
@@ -369,6 +369,7 @@ def trackProcess(color1, currentBlob, maskImages, emImages, z, shape):
 		nonzero_regions = [f[0] for f in frequency if f[0] != 0 and float(f[1])/len(currentBlob) > 0.15]
 
 		window, expansion = expandToFit(window, expansion, nonzero_regions, maskImage2)
+
 		currentBlob = transformBlob(currentBlob, [-expansion[0], -expansion[2]])
 
 		# find all the candidate 2D regions and place in a list. Includes all sub-regions obtained through erosion and all combinations of regions
@@ -517,13 +518,33 @@ def preprocess(image, maskShape):
 		blob = transformBlob(blob, [r-5, c-expandSize[1]])
 		colorDict[tuple(blob)] = color
 	return colorDict
+def blockOut(images, process):
+	for z in xrange(len(images)):
+		maskImg = images[z]
+		if z in process.keys():
+			blob = process[z]
+			for each in blob:
+				if each == None:
+					continue
+				if str(each).isdigit():
+					maskImg[np.where(maskImg==each)] = 0
+				else:
+					maskImg[zip(*each)] = 0
 def traceObjects(start, minimum_process_length, write_pickles_to, masterColorList, maskImages, emImages, maskShape, emShape):
 	# general setup
 	chainLengths = []
 	objectCount = -1
 
+	# Block out all chains which are already in the pickle folder
+	picklePaths = sorted(glob.glob(write_pickles_to + '*.p'))
+	pickles = [pickle.load(open(path,'rb')) for path in picklePaths]
+	for i, p in enumerate(pickles):
+		process, color = p
+		maskImages = blockOut(maskImages, process)
+		print 'Removed ' + str(i + 1) + '/' + str(len(pickles)) +' finished objects from image stack'
+
 	# Search through slices to get all chains that start more than 500 slices before the end of the stack
-	for z in xrange(len(maskImages[:-500])):
+	for z in xrange(len(maskImages)):
 		###TESTING###
 		# if z != 0:
 		# 	continue
@@ -555,6 +576,8 @@ def traceObjects(start, minimum_process_length, write_pickles_to, masterColorLis
 
 		# with all colors, begin tracing objects one by one
 		for i, startColor in enumerate(colorVals):
+			if i%100 == 0:
+				print "color: " + str(i) + " out of " + str(len(colorVals))
 			startBlob = blobs[i]
 			# process is a dictionary representing a 3D process, where each key is a z index, and each value is a tuple of 2D regions
 			process, maskImages = trackProcess(startColor, startBlob, maskImages, emImages, z, emShape)
@@ -585,8 +608,7 @@ def traceObjects(start, minimum_process_length, write_pickles_to, masterColorLis
 				chainLengths.append((objectCount, color, processLength))
 				pickle.dump((process, color), open(write_pickles_to + str(objectCount) + '.p', 'wb'))
 				pickle.dump(chainLengths, open('chainLengths.p','wb'))
-			else:
-				print '\n'
+
 def summarize():
 	chainLengths = pickle.load(open('chainLengths.p','rb'))
 	print 'Number of chains: ' + str(len(chainLengths))
@@ -638,9 +660,9 @@ def main():
 	################################################################################
 	# SETTINGS
 	minimum_process_length = 100 # Be careful not to set this too high because there may be small chains that can be merged manually with larger chains to complete them
-	write_images_to = 'littleresult3/'
-	write_pickles_to = 'picklecrop/object'
-	trace_objects = False
+	write_images_to = 'littleresult/'
+	write_pickles_to = 'pickles/object'
+	trace_objects = True
 	summarize_chains = True
 	build_resultStack = True
 	################################################################################
@@ -650,7 +672,7 @@ def main():
 
 	# Get list of colors to use in the result stack
 	masterColorList = pickle.load(open('masterColorList.p','rb'))
-
+	print "Loading data..."
 	maskFolderPath = sys.argv[1]
 	emFolderPath = sys.argv[2]
 	maskPaths =  sorted(glob.glob(maskFolderPath +'*'))
@@ -661,14 +683,22 @@ def main():
 	maskShape = maskImages[0].shape
 	emShape = emImages[0].shape
 
+	# Make sure the array is 16 bit
+	if maskImages[0].dtype != 'uint16':
+		print 'Error, array elements must be 16 bit'
+		trace_objects = False
+		summarize_chains = False
+		build_resultStack = False
+
 	# Make sure EM and mask data correspond
 	if len(maskPaths) != len(emPaths) or maskShape != emShape:
 		print 'Error, mask and EM data do not match'
 		trace_objects = False
+		summarize_chains = False
 		build_resultStack = False
 
 	startTime = timer()
-
+	print "Beginning run..."
 	# Trace each process in the input stack and save as pickle file
 	if trace_objects: traceObjects(startTime, minimum_process_length, write_pickles_to, masterColorList, maskImages, emImages, maskShape, emShape)
 
