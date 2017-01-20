@@ -669,6 +669,99 @@ def main():
 	# python -m cProfile -o output pathHunter.py littlecrop/
 	# python runsnake.py output
 
+	pickleFolderPath = 'chainpickles/'
+	picklePaths = sorted(glob.glob(pickleFolderPath + '*'))
+
+
+	imageFolderPath = sys.argv[1]
+	imagePaths = sorted(glob.glob(imageFolderPath + '*'))
+	imageStack = [cv2.imread(a,-1) for a in imagePaths]
+
+	for i, path in enumerate(picklePaths):
+		process, color = pickle.load(open(path,'rb'))
+		if 0 not in process.keys():
+			continue
+		if color != 42791:
+			continue
+
+
+		endZ = max(process.keys())
+
+		# process = {0:1, 1:33, 4:54, 5:22, 8:89, 12:0, 13:0, 14:0}
+		# endZ = 14
+		# while process[endZ] == 0:
+		# 	endZ -= 1
+		# 	while endZ not in process.keys():
+		# 		endZ -= 1
+
+		image1 = imageStack[endZ]
+
+		# startImage = imageStack[0]
+		# for each in process[0]:
+		# 	if each == None:
+		# 		continue
+		# 	if str(each).isdigit():
+		# 		wstartBlob = np.where(startImage==color)
+		# 		startBlob = zip(wstartBlob[0], wstartBlob[1])
+		# 	else:
+		# 		startBlob = each
+
+
+
+		# if len(startBlob) < 100:
+		# 	continue
+
+		if color not in image1:
+			continue
+
+		for each in process[endZ]:
+			if each == None:
+				continue
+			if str(each).isdigit():
+				wblob = np.where(image1==color)
+				blob = zip(wblob[0], wblob[1])
+			else:
+				blob = each
+
+		# 	img = np.zeros(image1.shape, np.uint16)
+		# 	img[zip(*blob)] = 99999
+		# 	print endZ
+		# 	print color
+		# 	a = np.zeros(image1.shape, np.uint16)
+		# 	w = np.where(imageStack[0]==color)
+		# 	bb = zip(w[0],w[1])
+		# 	a[zip(*bb)] = 99999
+		# 	cv2.imshow('a',a)
+		# 	cv2.imshow('img',img)
+		# 	q = np.zeros(image1.shape, np.uint16)
+		# 	cv2.waitKey()
+		# 	code.interact(local=locals())
+
+		terminate = False
+		d = 0
+		while terminate == False:
+			endZ += 1
+
+			image2 = imageStack[endZ]
+
+			code.interact(local=locals())
+			organicWindow = image2[zip*(blob)]
+			frequency = collections.Counter(organicWindow).most_common()
+
+			if frequency[0][0] == 0 and len(frequency) == 1:
+				if d > 12:
+					terminate = True
+					print '4'
+					continue
+				else:
+					d += 1
+					print '5'
+					continue
+
+			code.interact(local=locals())
+
+
+
 	# Get list of colors to use in the result stack
 	masterColorList = pickle.load(open('masterColorList.p','rb'))
 	print "Loading data..."
